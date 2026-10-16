@@ -1,0 +1,14 @@
+# Parallel Particle Dynamics Lab: Scientific Experiment Export
+# Experiment: EXP_04_DENSE_GRANULAR_COLUMN
+# Integrator: Semi-implicit Symplectic Euler
+# Total Physical Duration: 1.66667 s
+# Frame Timestep dt: 0.0166667 s
+# Integration Substeps: 12
+# Effective dt_sub: 0.00138889 s
+# Coefficient of Restitution e: 0.2
+# Boundary Restitution e_b: 0.3
+# Gravitational Field g: (0, -9.80665) m/s^2
+# Particle Count: 48
+# Coordinate Reference: SI Units (meters, seconds, kilograms, Joules)
+time_s,kinetic_energy_J,potential_energy_J,total_energy_J,momentum_x_kg_m_s,momentum_y_kg_m_s,momentum_drift_kg_m_s,cfl_displacement_ratio,active_contacts,max_penetration_m,pos_error_m,vel_error_m_s
+0.500000,1.200000,0.800000,2.000000,0.000000,0.000000,0.000000,0.000000,0,0.000000,0.000000,0.000000
