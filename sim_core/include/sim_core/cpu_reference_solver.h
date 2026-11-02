@@ -46,10 +46,19 @@ public:
      */
     [[nodiscard]] SimulationDiagnostics compute_diagnostics() const;
 
+    void reset_collision_metrics() {
+        step_collision_impulses_ = 0;
+        cumulative_collisions_ = 0;
+    }
+    [[nodiscard]] uint64_t step_collision_impulses() const { return step_collision_impulses_; }
+    [[nodiscard]] uint64_t cumulative_collisions() const { return cumulative_collisions_; }
+
 private:
     SimConfig config_;
     CircularBoundary boundary_;
     std::vector<Particle> particles_;
+    uint64_t step_collision_impulses_{0};
+    uint64_t cumulative_collisions_{0};
 };
 
 } // namespace sim_core

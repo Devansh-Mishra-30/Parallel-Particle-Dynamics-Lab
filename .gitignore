@@ -20,6 +20,8 @@ imgui.ini
 
 # Test scratch outputs
 output/test_tmp/
+output/csv/lab_export_*.csv
+2D-particle-sim/gpuSim/timings_cuda.csv
 
 # CMake
 CMakeFiles/

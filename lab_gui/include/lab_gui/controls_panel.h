@@ -15,9 +15,11 @@ public:
     void render(AppState& state);
 
 private:
+    void render_mode_tabs(AppState& state);
     void render_experiment_selector(AppState& state);
     void render_physical_parameters(AppState& state);
     void render_numerical_controls(AppState& state);
+    void render_performance_workbench(AppState& state);
     void render_playback_controls(AppState& state);
     void render_visualization_options(AppState& state);
 };

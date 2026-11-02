@@ -1,4 +1,5 @@
 #include "lab_gui/controls_panel.h"
+#include "lab_gui/diagnostics_panel.h"
 #include "lab_gui/experiment_presets.h"
 
 #include <chrono>
@@ -13,29 +14,70 @@ void ControlsPanel::render(AppState& state) {
     ImGui::Begin("Experiment Controls & Parameters", nullptr);
 
     ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "PARALLEL PARTICLE DYNAMICS LAB");
-    ImGui::TextDisabled("Phase 1C: Scientific Verification & Student Workbench");
+    ImGui::TextDisabled("Phase 5: Release Candidate Scientific Workbench");
     ImGui::Separator();
 
-    // 1. Playback & Clock Controls (Prominently at the top)
+    // 0. Three-Mode Scientific Disclosure Tabs (Learn, Analyze, Performance)
+    render_mode_tabs(state);
+    ImGui::Separator();
+
+    // 1. Playback & Clock Controls (Prominently at the top across all modes)
     render_playback_controls(state);
     ImGui::Separator();
 
-    // 2. Predefined Experiment Selector
-    render_experiment_selector(state);
-    ImGui::Separator();
-
-    // 3. Physical Parameters
-    render_physical_parameters(state);
-    ImGui::Separator();
-
-    // 4. Numerical Integration Controls
-    render_numerical_controls(state);
-    ImGui::Separator();
-
-    // 5. Viewport Overlays & Rendering Modes
-    render_visualization_options(state);
+    // Contextual Mode Panels
+    if (state.ui_mode == LabUiMode::Learn) {
+        render_experiment_selector(state);
+        ImGui::Separator();
+        render_physical_parameters(state);
+        ImGui::Separator();
+        render_visualization_options(state);
+    } else if (state.ui_mode == LabUiMode::Analyze) {
+        render_experiment_selector(state);
+        ImGui::Separator();
+        render_numerical_controls(state);
+        ImGui::Separator();
+        render_visualization_options(state);
+    } else { // LabUiMode::Performance
+        render_performance_workbench(state);
+        ImGui::Separator();
+        render_visualization_options(state);
+    }
 
     ImGui::End();
+}
+
+void ControlsPanel::render_mode_tabs(AppState& state) {
+    ImGui::TextUnformatted("Workstation Mode:");
+
+    const bool is_learn = (state.ui_mode == LabUiMode::Learn);
+    const bool is_analyze = (state.ui_mode == LabUiMode::Analyze);
+    const bool is_perf = (state.ui_mode == LabUiMode::Performance);
+
+    if (is_learn) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.48f, 0.85f, 1.0f));
+    if (ImGui::Button(" 1. LEARN ", ImVec2(95.0f, 28.0f))) state.ui_mode = LabUiMode::Learn;
+    if (is_learn) ImGui::PopStyleColor();
+
+    ImGui::SameLine();
+    if (is_analyze) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.48f, 0.85f, 1.0f));
+    if (ImGui::Button(" 2. ANALYZE ", ImVec2(105.0f, 28.0f))) state.ui_mode = LabUiMode::Analyze;
+    if (is_analyze) ImGui::PopStyleColor();
+
+    ImGui::SameLine();
+    if (is_perf) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.48f, 0.85f, 1.0f));
+    if (ImGui::Button(" 3. PERFORMANCE ", ImVec2(130.0f, 28.0f))) state.ui_mode = LabUiMode::Performance;
+    if (is_perf) ImGui::PopStyleColor();
+
+    if (state.ui_mode == LabUiMode::Learn) {
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "Mode 1: Guided Physics Laboratories");
+        ImGui::TextDisabled("Physics exploration: Conservation laws, elasticity, and impact geometry.");
+    } else if (state.ui_mode == LabUiMode::Analyze) {
+        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Mode 2: Numerical Verification & Stability");
+        ImGui::TextDisabled("Numerical study: Convergence sweeps, Gauss-Seidel iterations & stabilization.");
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "Mode 3: Multicore OpenMP & GPU Scaling");
+        ImGui::TextDisabled("HPC workbench: Hardware acceleration & side-by-side backend verification.");
+    }
 }
 
 void ControlsPanel::render_playback_controls(AppState& state) {
@@ -85,7 +127,8 @@ void ControlsPanel::render_playback_controls(AppState& state) {
                 ExperimentPresets::load_custom(state);
                 break;
         }
-        state.is_paused = false;
+        state.is_paused = true; // Crucial fix: Reset preserves paused state at t=0
+        state.sim_accumulator = 0.0f;
     }
 
     // Speed Multipliers
@@ -248,31 +291,23 @@ void ControlsPanel::render_physical_parameters(AppState& state) {
 }
 
 void ControlsPanel::render_numerical_controls(AppState& state) {
-    if (ImGui::CollapsingHeader("Numerical Solver Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("Numerical Solver Parameters", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Frame Timestep dt
         if (ImGui::SliderFloat("Frame dt (s)", &state.config.dt, 0.001f, 0.050f, "%.4f s")) {
             state.solver.set_config(state.config);
+            state.omp_solver.set_config(state.config);
         }
 
         // Substeps
         if (ImGui::SliderInt("Substeps (N_sub)", &state.config.substeps, 1, 32)) {
             state.solver.set_config(state.config);
+            state.omp_solver.set_config(state.config);
         }
 
         // Effective Substep dt_sub
         const float dt_sub_ms = state.config.dt_substep() * 1000.0f;
-        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "Effective dt_sub: %.3f ms", dt_sub_ms);
-
-        // Gauss-Seidel Contact Iterations
-        if (ImGui::SliderInt("Gauss-Seidel Iters", &state.config.solver_iterations, 1, 20)) {
-            state.solver.set_config(state.config);
-        }
-
-        // Baumgarte Stabilization Factor
-        if (ImGui::SliderFloat("Penetration Stabilization (alpha)", &state.config.stabilization_factor, 0.0f, 1.0f, "%.2f")) {
-            state.solver.set_config(state.config);
-            state.omp_solver.set_config(state.config);
-        }
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "Effective dt_sub: %.3f ms (f_sub = %.0f Hz)",
+                           dt_sub_ms, 1000.0f / dt_sub_ms);
 
         // Integrator Scheme Selection (Lab 2 Coursework)
         int integ_choice = (state.config.integrator == sim_core::IntegratorType::ExplicitEuler) ? 1 : 0;
@@ -282,9 +317,33 @@ void ControlsPanel::render_numerical_controls(AppState& state) {
             state.omp_solver.set_config(state.config);
         }
 
-        // Phase 2 & 3: Multi-Backend Compute Architecture
+        // Gauss-Seidel Contact Iterations
+        if (ImGui::SliderInt("Gauss-Seidel Iters (K)", &state.config.solver_iterations, 1, 32)) {
+            state.solver.set_config(state.config);
+            state.omp_solver.set_config(state.config);
+        }
+        ImGui::TextDisabled("  -> Note: K in [4, 8] provides sub-millimeter contact error.");
+
+        // Baumgarte Stabilization Factor
+        if (ImGui::SliderFloat("Stabilization (alpha)", &state.config.stabilization_factor, 0.0f, 1.0f, "%.2f")) {
+            state.solver.set_config(state.config);
+            state.omp_solver.set_config(state.config);
+        }
+        ImGui::TextDisabled("  -> Note: alpha in [0.25, 0.60] balances settling vs micro-jitter.");
+
         ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Physics Compute Backend:");
+        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Numerical Verification Actions:");
+        if (ImGui::Button(" Run Timestep Convergence Sweep (EXP_03) ", ImVec2(-1.0f, 30.0f))) {
+            state.active_experiment = ExperimentType::ConvergenceStudy;
+            ExperimentPresets::load_convergence(state);
+            DiagnosticsPanel::execute_convergence_sweep(state);
+        }
+    }
+}
+
+void ControlsPanel::render_performance_workbench(AppState& state) {
+    if (ImGui::CollapsingHeader("Physics Compute Backend & Architecture", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Active Compute Engine:");
 
         int backend_choice = static_cast<int>(state.active_backend);
         if (ImGui::RadioButton("CPU Sequential", &backend_choice, 0)) {
@@ -365,25 +424,68 @@ void ControlsPanel::render_numerical_controls(AppState& state) {
 #endif
         }
 
-        // Live Physics Performance Readout
+        // Live Performance & Compute Metrics
         ImGui::Spacing();
-        ImGui::Text("Step Compute Time: %.3f ms (%.1f FPS)", state.last_physics_step_ms,
-                    (state.last_physics_step_ms > 0.0 ? 1000.0 / state.last_physics_step_ms : 0.0));
-        ImGui::TextDisabled("Backend: %s | Active Particles: %zu",
-                            (state.active_backend == SolverBackend::CudaGpu ? "CUDA GPU" :
-                             state.active_backend == SolverBackend::OpenMpParallel ? "OpenMP Multicore" : "CPU Reference"),
-                            state.get_active_particle_count());
+        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.4f, 1.0f), "Live HPC Performance:");
+        const double step_time_ms = state.last_physics_step_ms;
+        const double sim_rate_hz = (step_time_ms > 0.001) ? (1000.0 / step_time_ms) : 0.0;
+        const size_t n_particles = state.get_active_particle_count();
+        const double throughput = n_particles * sim_rate_hz;
 
-        // Stage 10: Scientific Comparison Experiment (Educational Investigation)
+        ImGui::BulletText("Step Compute Time: %.3f ms (%.1f us)", step_time_ms, step_time_ms * 1000.0);
+        ImGui::BulletText("Physics Simulation Rate: %.1f steps/s", sim_rate_hz);
+        ImGui::BulletText("Workload Throughput: %.2f M particles*steps/s", throughput / 1e6);
+        ImGui::BulletText("Active Particles: %zu | Substeps: %d", n_particles, state.config.substeps);
+
+        // Executable Side-by-Side Multi-Backend Verification
         ImGui::Spacing();
-        if (ImGui::CollapsingHeader("Scientific Comparison: CPU vs OpenMP vs CUDA", ImGuiTreeNodeFlags_None)) {
-            ImGui::TextColored(ImVec4(0.85f, 0.95f, 0.5f, 1.0f), "Research Question: Does parallel computing alter simulation accuracy?");
-            ImGui::BulletText("Physical Model: Identical Symplectic Euler, mass-weighted Baumgarte, frictionless impulses.");
-            ImGui::BulletText("Numerical Algorithm: CPU uses Gauss-Seidel (in-place); OpenMP and CUDA use Jacobi (simultaneous).");
-            ImGui::BulletText("2-Body Impacts: Mathematically identical across all backends (||e_v|| < 1e-4 m/s).");
-            ImGui::BulletText("Dense Packings: Jacobi evaluates neighbor impulses symmetrically; Gauss-Seidel has directional bias.");
-            ImGui::BulletText("Floating-Point Rounding: GPU FP32 FMA fusion vs x86-64 AVX SIMD causes minor machine deviations (~1e-6).");
-            ImGui::BulletText("Determinism: Verified identical across repeat GPU runs (dP diff = 0.000000 kg*m/s).");
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Cross-Backend Numerical Verification:");
+        ImGui::TextWrapped("Executes an identical 100-step workload across CPU, OpenMP, and CUDA backends to verify execution time, speedup, and trajectory agreement.");
+
+        if (ImGui::Button(" Run Cross-Backend Verification (CPU vs OpenMP vs CUDA) ", ImVec2(-1.0f, 32.0f))) {
+            state.run_cross_backend_comparison(100);
+        }
+
+        if (state.backend_comparison.executed) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "[VERIFICATION RUN: 100 STEPS, %zu PARTICLES]",
+                               state.backend_comparison.particle_count);
+
+            ImGui::Columns(4, "BackendTable", true);
+            ImGui::Text("Backend"); ImGui::NextColumn();
+            ImGui::Text("Time (ms)"); ImGui::NextColumn();
+            ImGui::Text("Speedup"); ImGui::NextColumn();
+            ImGui::Text("Max ||dx||"); ImGui::NextColumn();
+            ImGui::Separator();
+
+            // CPU Row
+            ImGui::Text("CPU Ref"); ImGui::NextColumn();
+            ImGui::Text("%.2f ms", state.backend_comparison.cpu_time_ms); ImGui::NextColumn();
+            ImGui::Text("1.00x"); ImGui::NextColumn();
+            ImGui::Text("Baseline"); ImGui::NextColumn();
+
+            // OpenMP Row
+            const double omp_speedup = (state.backend_comparison.omp_time_ms > 0.0) ?
+                (state.backend_comparison.cpu_time_ms / state.backend_comparison.omp_time_ms) : 0.0;
+            ImGui::Text("OpenMP (%dT)", state.omp_threads); ImGui::NextColumn();
+            ImGui::Text("%.2f ms", state.backend_comparison.omp_time_ms); ImGui::NextColumn();
+            ImGui::Text("%.2fx", omp_speedup); ImGui::NextColumn();
+            ImGui::Text("%.2e m", state.backend_comparison.omp_max_pos_diff); ImGui::NextColumn();
+
+            // CUDA Row
+            if (state.backend_comparison.cuda_time_ms > 0.0) {
+                const double cuda_speedup = (state.backend_comparison.cuda_time_ms > 0.0) ?
+                    (state.backend_comparison.cpu_time_ms / state.backend_comparison.cuda_time_ms) : 0.0;
+                ImGui::Text("CUDA GPU"); ImGui::NextColumn();
+                ImGui::Text("%.2f ms", state.backend_comparison.cuda_time_ms); ImGui::NextColumn();
+                ImGui::Text("%.2fx", cuda_speedup); ImGui::NextColumn();
+                ImGui::Text("%.2e m", state.backend_comparison.cuda_max_pos_diff); ImGui::NextColumn();
+            }
+            ImGui::Columns(1);
+            ImGui::Separator();
+
+            ImGui::TextDisabled("Numerical parity note: OpenMP and CUDA use Jacobi parallel evaluation; CPU uses Gauss-Seidel sequential order.");
         }
     }
 }

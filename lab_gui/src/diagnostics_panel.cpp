@@ -12,7 +12,7 @@ void DiagnosticsPanel::execute_convergence_sweep(AppState& state) {
     state.convergence_study_running = true;
 
     const std::vector<float> dts = {0.04f, 0.02f, 0.01f, 0.005f};
-    constexpr float T_END = 0.5f;
+    constexpr float T_END = 0.40f; // Exact integer step divisor (10, 20, 40, 80 steps)
     const sim_core::Vec2 x0(-0.6f, -0.4f);
     const sim_core::Vec2 v0(1.5f, 2.5f);
     const sim_core::Vec2 g(0.0f, -9.80665f);
@@ -23,6 +23,7 @@ void DiagnosticsPanel::execute_convergence_sweep(AppState& state) {
     for (size_t i = 0; i < dts.size(); ++i) {
         const float dt = dts[i];
         sim_core::SimConfig cfg;
+        cfg.integrator = state.config.integrator; // Respect selected integrator!
         cfg.dt = dt;
         cfg.substeps = 1; // single step to observe pure dt scaling
         cfg.gravity = g;
@@ -222,7 +223,7 @@ void DiagnosticsPanel::render_analytical_verification(AppState& state) {
 
             if (!state.convergence_results.empty()) {
                 ImGui::Spacing();
-                ImGui::Text("Empirical Refinement Results (t = 0.50 s):");
+                ImGui::Text("Empirical Refinement Results (t = 0.40 s):");
                 ImGui::Columns(5, "ConvTable", true);
                 ImGui::Text("dt (s)"); ImGui::NextColumn();
                 ImGui::Text("L2 Error (m)"); ImGui::NextColumn();
@@ -244,7 +245,9 @@ void DiagnosticsPanel::render_analytical_verification(AppState& state) {
                 }
                 ImGui::Columns(1);
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Observed convergence order: p ~ 1.00 (Semi-implicit Euler)");
+                const char* integ_name = (state.config.integrator == sim_core::IntegratorType::ExplicitEuler) ?
+                    "Explicit Forward Euler" : "Semi-implicit Symplectic Euler";
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Observed convergence order: p ~ 1.00 (%s)", integ_name);
             }
         }
         else if (state.active_experiment == ExperimentType::DensePacking) {

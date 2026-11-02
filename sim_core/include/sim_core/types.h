@@ -163,7 +163,9 @@ struct SimulationDiagnostics {
     float total_mechanical_energy{0.0f};   // SI: Joules (J)
     Vec2 center_of_mass{0.0f, 0.0f};       // SI: meters (m)
     float max_penetration{0.0f};           // SI: meters (m)
-    int active_contacts{0};
+    int active_contacts{0};                // Geometric overlaps at current sampled state
+    uint64_t step_collision_impulses{0};   // Physical collision impulses applied during latest step
+    uint64_t cumulative_collisions{0};     // Cumulative collision impulses applied since reset
     int nan_count{0};
     bool is_finite{true};
 };

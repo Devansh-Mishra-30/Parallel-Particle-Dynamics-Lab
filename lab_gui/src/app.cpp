@@ -77,15 +77,55 @@ void LabApp::update(float delta_wall_seconds) {
     }
 
     if (!state_.is_paused || state_.step_single_frame) {
-        // Compute number of steps to advance based on speed multiplier
-        int steps_to_run = 1;
-        if (state_.sim_speed >= 2.0f) steps_to_run = 2;
+        int steps_to_run = 0;
+        if (state_.step_single_frame) {
+            steps_to_run = 1;
+            state_.step_single_frame = false;
+            state_.sim_accumulator = 0.0f;
+        } else {
+            // Nominal frame time if delta_wall_seconds is 0 or abnormal
+            const float dt_wall = (delta_wall_seconds > 0.001f && delta_wall_seconds < 0.2f) ? delta_wall_seconds : (1.0f / 60.0f);
+            state_.sim_accumulator += dt_wall * state_.sim_speed;
+
+            // Prevent accumulator spiral of death if frame freezes
+            const float max_accum = state_.config.dt * 5.0f;
+            if (state_.sim_accumulator > max_accum) {
+                state_.sim_accumulator = max_accum;
+            }
+
+            while (state_.sim_accumulator >= state_.config.dt && steps_to_run < 5) {
+                steps_to_run++;
+                state_.sim_accumulator -= state_.config.dt;
+            }
+        }
 
         for (int s = 0; s < steps_to_run; ++s) {
             state_.step_active_solver();
             state_.current_time += state_.config.dt;
             state_.total_substeps += state_.config.substeps;
             state_.frame_index++;
+
+            // Analytical ballistic error tracking & boundary collision sentinel
+            if (state_.active_experiment == ExperimentType::GravityBallistic) {
+                const auto& particles = state_.get_active_particles();
+                if (!particles.empty()) {
+                    const float t = static_cast<float>(state_.current_time);
+                    const sim_core::Vec2 x_exact = state_.initial_pos1 + state_.initial_vel1 * t + 0.5f * state_.config.gravity * (t * t);
+                    const sim_core::Vec2 v_exact = state_.initial_vel1 + state_.config.gravity * t;
+
+                    state_.current_pos_error = (particles[0].position - x_exact).length();
+                    state_.current_vel_error = (particles[0].velocity - v_exact).length();
+
+                    const float dist_from_center = (particles[0].position - state_.boundary.center).length();
+                    if (!state_.wall_contact_occurred && (dist_from_center + particles[0].radius >= state_.boundary.radius - 1e-3f)) {
+                        state_.wall_contact_occurred = true;
+                        state_.wall_contact_time = state_.current_time;
+                    }
+                }
+            } else {
+                state_.current_pos_error = 0.0f;
+                state_.current_vel_error = 0.0f;
+            }
 
             const float current_drift = (state_.current_diagnostics.total_momentum - state_.initial_momentum).length();
 
@@ -131,13 +171,12 @@ void LabApp::update(float delta_wall_seconds) {
             row.momentum_drift = current_drift;
             row.cfl = state_.current_cfl;
             row.active_contacts = state_.current_diagnostics.active_contacts;
+            row.step_collision_impulses = state_.current_diagnostics.step_collision_impulses;
             row.max_penetration = state_.current_diagnostics.max_penetration;
             row.pos_error = state_.current_pos_error;
             row.vel_error = state_.current_vel_error;
             state_.recorded_rows.push_back(row);
         }
-
-        state_.step_single_frame = false;
     } else {
         // Paused: compute diagnostics on static snapshot
         if (state_.active_backend == SolverBackend::OpenMpParallel) {

@@ -31,6 +31,10 @@ void CpuReferenceSolver::substep(float dt_sub) {
             for (size_t j = i + 1; j < n; ++j) {
                 ContactPair contact;
                 if (ContactSolver::detect_contact(particles_[i], particles_[j], contact)) {
+                    if (contact.normal_velocity < 0.0f) {
+                        step_collision_impulses_++;
+                        cumulative_collisions_++;
+                    }
                     // Physical velocity impulse (momentum conserving)
                     ContactSolver::resolve_collision_impulse(particles_[i], particles_[j], contact, config_.restitution);
 
@@ -48,6 +52,7 @@ void CpuReferenceSolver::substep(float dt_sub) {
 }
 
 void CpuReferenceSolver::step() {
+    step_collision_impulses_ = 0;
     const int s = (config_.substeps > 0) ? config_.substeps : 1;
     const float dt_sub = config_.dt_substep();
 
@@ -57,7 +62,10 @@ void CpuReferenceSolver::step() {
 }
 
 SimulationDiagnostics CpuReferenceSolver::compute_diagnostics() const {
-    return DiagnosticsCalculator::compute(particles_, config_);
+    SimulationDiagnostics diag = DiagnosticsCalculator::compute(particles_, config_);
+    diag.step_collision_impulses = step_collision_impulses_;
+    diag.cumulative_collisions = cumulative_collisions_;
+    return diag;
 }
 
 } // namespace sim_core
