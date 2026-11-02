@@ -1,169 +1,161 @@
 # Parallel Particle Dynamics Lab
 
-A C++17 2D particle-dynamics workbench for comparing a sequential CPU solver, an OpenMP solver, and an optional NVIDIA CUDA solver under shared simulation scenarios.
+**C++17 numerical simulation · OpenMP multicore computing · NVIDIA CUDA · Scientific verification**
 
-The project is a **portfolio-ready engineering prototype**. It demonstrates collision mechanics, first-order integration, spatial broad-phase acceleration, parallel implementation strategies, diagnostics, and CSV export. It is not presented as a research-grade or general-purpose physics engine.
+An interactive **2D particle-dynamics engineering prototype** for studying how physical equations become numerical algorithms—and how those algorithms behave on a sequential CPU, a multicore CPU, and an NVIDIA GPU.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](CMakeLists.txt)
-[![Status: release candidate](https://img.shields.io/badge/status-release%20candidate-orange.svg)](RELEASE_NOTES.md)
+![Parallel Particle Dynamics Lab: CUDA two-particle collision](output/screenshots/gui_exp01_cuda_collision.png)
 
-![CUDA collision experiment](output/screenshots/gui_exp01_cuda_collision.png)
+> **Project status:** Published educational/portfolio prototype (v2 release candidate). The implementation is verified for the documented test scenarios and hardware, **not** a research-validated general-purpose physics engine.
 
-## Project overview
+## What this project demonstrates
 
-- Shared C++17 particle state, configuration, contact, boundary, and diagnostics code.
-- Sequential CPU contact resolution using in-place Gauss-Seidel-style updates.
-- OpenMP shared-memory execution using thread-local Jacobi-style accumulation.
-- Optional CUDA execution using double-buffered Jacobi-style updates and a GPU spatial grid.
-- Semi-implicit Euler and explicit Euler integration for comparison.
-- Frictionless elastic and inelastic impacts with a coefficient of restitution.
-- Circular boundary response, gravity, penetration correction, and finite-state checks.
-- Uniform-grid broad-phase collision candidate generation.
-- GLFW, Dear ImGui, ImPlot, and OpenGL desktop workbench.
-- Headless experiments, CSV export, plots, and automated tests.
+| Engineering area | Implementation / experiment |
+| --- | --- |
+| **Dynamics and contact mechanics** | Elastic, inelastic, unequal-mass, and oblique impacts; impulse-based normal contact and circular boundaries |
+| **Numerical methods** | Explicit and semi-implicit Euler; analytical references and timestep-refinement studies |
+| **Iterative contact resolution** | Sequential Gauss–Seidel-style updates versus parallel Jacobi-style accumulation; penetration stabilization |
+| **High-performance computing** | Sequential C++, OpenMP multithreading, optional CUDA kernels, and spatial-grid broad-phase collision detection |
+| **Scientific software** | Dear ImGui/ImPlot visualization, energy and momentum diagnostics, automated tests, CSV export, and plotting scripts |
 
-The CPU, OpenMP, and CUDA contact algorithms are not bitwise identical for dense simultaneous contacts. Verification checks analytical cases and bounded aggregate behavior rather than claiming identical many-body trajectories.
+The goal is to connect **mathematical theory → C++ implementation → simulation → measured error → engineering interpretation**.
 
-## Model summary
+## See it in action
 
-For contact normal $\mathbf{n}$, relative normal speed $v_n$, coefficient of restitution $e$, and inverse masses $m_1^{-1}$ and $m_2^{-1}$, the normal impulse is
+| Collision and conservation | Numerical convergence | Dense granular contacts |
+| :---: | :---: | :---: |
+| ![Inelastic collision experiment](output/screenshots/gui_exp01_collision_inelastic.png) | ![Timestep convergence study](output/screenshots/gui_exp03_convergence_study.png) | ![Dense granular column](output/screenshots/gui_exp04_dense_granular.png) |
 
-$$
-j = -\frac{(1+e)v_n}{m_1^{-1}+m_2^{-1}}.
-$$
+Additional verified screenshots: [gravity](output/screenshots/gui_exp02_ballistic_gravity.png) · [OpenMP collision](output/screenshots/gui_exp01_openmp_collision.png) · [CUDA granular](output/screenshots/gui_exp04_cuda_gpu.png) · [OpenMP granular](output/screenshots/gui_exp04_openmp_multicore.png).
 
-The default integrator is semi-implicit Euler:
+### Five-minute walkthrough
 
-$$
-\mathbf{v}_{n+1}=\mathbf{v}_n+\mathbf{g}\,\Delta t,
-\qquad
-\mathbf{x}_{n+1}=\mathbf{x}_n+\mathbf{v}_{n+1}\,\Delta t.
-$$
+1. Launch `sim_lab` and select **Two-Particle Impact**. Choose an elastic collision, then vary restitution and inspect post-impact velocities and kinetic energy.
+2. Switch between **sequential CPU** and **OpenMP**; use **CUDA** only on compatible NVIDIA hardware.
+3. Select **Ballistic Gravity** and compare the numerical trajectory with the analytical prediction **before wall contact**.
+4. Open the **Timestep Convergence** experiment and run the refinement study.
+5. Select **Dense Granular Column** to examine multiple simultaneous contacts and penetration diagnostics.
 
-The included constant-acceleration refinement experiment confirms the expected first-order trend for that tested problem. This is verification of the implementation, not a blanket accuracy claim for arbitrary simulations.
+The contact-update algorithms differ across backends: **dense, many-body trajectories are not guaranteed to match particle-for-particle**. The comparisons instead use analytical cases and appropriate numerical metrics.
 
-## Repository layout
+## Quick start
 
-| Path | Purpose |
-|---|---|
-| `sim_core/` | Shared types, diagnostics, contact/boundary logic, and sequential solver |
-| `sim_omp_v2/` | OpenMP solver, spatial grid, and CPU benchmarks |
-| `sim_cuda_v2/` | Optional CUDA solver, GPU spatial grid, and cross-backend benchmark |
-| `lab_gui/` | Interactive desktop workbench |
-| `experiments/` | Collision, gravity, convergence, export, and audit runners |
-| `tests/` | Physics, OpenMP, CUDA, grid, GUI, and cross-backend checks |
-| `docs/` | Design notes, coursework, verification records, and release handoff |
-| `output/` | Example CSV data, plots, and application screenshots |
-
-## Requirements
-
-### CPU/OpenMP
-
-Verified on Ubuntu 24.04 under WSL2/WSLg with CMake 3.28.3, GCC 13.3, C++17, OpenMP 4.5, OpenGL 3.3, and X11.
+**Verified platform:** Ubuntu 24.04 in WSL2/WSLg; GCC 13.3; CMake 3.28.3; OpenMP 4.5. The GUI requires an OpenGL 3.3 display environment. Native Windows and macOS builds have not been verified.
 
 ```bash
 sudo apt update
 sudo apt install -y build-essential cmake git libgl1-mesa-dev xorg-dev
-```
 
-The GUI configuration fetches pinned GLFW, Dear ImGui, and ImPlot sources from GitHub, so the first configure requires network access. A display server is required only for the interactive window.
+git clone https://github.com/Devansh-Mishra-30/cuda-particle-simulation.git
+cd cuda-particle-simulation
 
-### Optional CUDA
-
-The verified CUDA environment used CUDA Toolkit 12.0 and an NVIDIA GeForce RTX 4060 Laptop GPU. The current CMake configuration targets compute capability **8.9 (`sm_89`)**. Other toolkit versions and GPU architectures have not been release-verified.
-
-If CUDA is unavailable, configure with `-DENABLE_CUDA=OFF`.
-
-## Build
-
-CPU/OpenMP desktop application:
-
-```bash
+# Recommended: CPU/OpenMP desktop build (no NVIDIA GPU needed)
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_CUDA=OFF
 cmake --build build -j8
-```
-
-CPU/OpenMP command-line tools only:
-
-```bash
-cmake -S . -B build_cpu -DCMAKE_BUILD_TYPE=Release \
-  -DENABLE_CUDA=OFF -DBUILD_LAB_GUI=OFF
-cmake --build build_cpu -j8
-```
-
-CUDA-enabled desktop application on compatible hardware:
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_CUDA=ON
-cmake --build build -j8
-```
-
-## Demonstration guide
-
-```bash
-# Run every test registered for the configured backends
 ctest --test-dir build --output-on-failure
-
-# Launch the desktop workbench
 ./build/sim_lab
-
-# Exercise the GUI simulation path without opening a window
-./build/sim_lab --test-headless 60
-
-# Generate collision, gravity, and convergence CSV files
-./build/run_experiments --out output/csv
 ```
 
-Suggested two-minute walkthrough:
+For **command-line experiments without the desktop GUI**:
 
-1. Open `sim_lab` and select the two-particle collision experiment.
-2. Change restitution from `1.0` to `0.5` and compare momentum and kinetic-energy diagnostics.
-3. Switch between CPU and OpenMP; select CUDA only on compatible hardware.
-4. Open the dense granular preset to show spatial-grid contact handling.
-5. Run `ctest` and show the exported CSV files in `output/csv/`.
+```bash
+cmake -S . -B build_cli -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_CUDA=OFF -DBUILD_LAB_GUI=OFF
+cmake --build build_cli -j8
+ctest --test-dir build_cli --output-on-failure
+./build_cli/run_experiments --out output/csv
+```
 
-## Verification snapshot
+For **CUDA** (tested on an NVIDIA RTX 4060 Laptop GPU with CUDA Toolkit 12.0, compute capability 8.9):
 
-Fresh verification on **November 1, 2026** produced:
+```bash
+cmake -S . -B build_cuda -DCMAKE_BUILD_TYPE=Release -DENABLE_CUDA=ON
+cmake --build build_cuda -j8
+ctest --test-dir build_cuda --output-on-failure
+./build_cuda/sim_lab
+```
 
-| Configuration | Result | Scope |
-|---|---:|---|
-| CUDA-enabled release build | 10/10 CTest suites passed | CPU, OpenMP, CUDA, grids, GUI smoke, numerical audit |
-| CPU/OpenMP desktop build (`ENABLE_CUDA=OFF`) | 7/7 CTest suites passed | CPU, OpenMP, grid, GUI smoke, numerical audit |
-| CPU/OpenMP CLI-only build | 6/6 CTest suites passed | CPU, OpenMP, grid, experiments, numerical audit |
+The current CUDA build configuration targets `sm_89` specifically. Other architectures have **not** been release-tested. Desktop dependencies (GLFW, Dear ImGui, and ImPlot) are fetched during CMake configuration; the first configure requires network access.
 
-Representative executable checks also passed:
+## Under the hood
 
-- Core physics: 14/14, including constant velocity, gravity, integration order, finite-state guards, and elastic/inelastic collisions.
-- Collision acceptance: 7/7 analytical and model-specific cases.
-- OpenMP: 46/46 checks across 1, 2, 4, 8, and 16 threads.
-- CUDA: 10/10 checks on the verified RTX 4060 environment.
-- Cross-backend: 4/4 scenarios.
-- Export smoke test: five non-empty CSV files generated successfully.
+### Physics model
 
-The checked-in benchmark CSV files and plots are historical measurements from the documented machine. They are useful as reproducibility artifacts, but no universal GPU speedup or throughput claim is made here.
+For two particles in frictionless normal contact, the impulse magnitude is
 
-## Screenshots and example output
+$$
+j=-\frac{(1+e)v_n}{m_1^{-1}+m_2^{-1}},
+$$
 
-Eight genuine tracked 1600x920 application captures are in [`output/screenshots/`](output/screenshots/), including collision, gravity, convergence, dense-contact, OpenMP, and CUDA views. Example CSV files and plots are under [`output/csv/`](output/csv/) and [`output/plots/`](output/plots/).
+where $e$ is the coefficient of restitution and $v_n$ is the approaching relative normal velocity, under the solver's sign convention.
 
-## Known limitations
+Under constant acceleration, the default **semi-implicit Euler** method updates velocity before position:
 
-- The model is 2D, uses circular particles, and implements frictionless normal contact without rotational dynamics.
-- Collision detection is discrete. Large motion per substep can tunnel through contacts.
-- Dense-contact trajectories differ across sequential Gauss-Seidel and parallel Jacobi update schemes.
-- CUDA release verification is limited to `sm_89` hardware.
-- Performance depends on workload, compiler, thermal state, and hardware. Re-run benchmarks before quoting results.
-- Interactive GUI verification is Linux/WSLg-focused; native Windows and macOS builds are not release-verified.
-- In the November 1 WSLg audit, unattended `--screenshot` commands returned blank frames even though the existing tracked captures are valid. Visually inspect any new capture.
-- This is an educational and portfolio prototype, not a safety-critical or research-validated simulator.
+$$
+\mathbf v_{n+1}=\mathbf v_n+\mathbf g\,\Delta t,
+\qquad
+\mathbf x_{n+1}=\mathbf x_n+\mathbf v_{n+1}\,\Delta t.
+$$
 
-## Documentation and license
+The project also implements **explicit (forward) Euler** and provides refinement experiments to examine first-order position-error behavior for smooth motion.
 
-- [Release notes](RELEASE_NOTES.md)
-- [Publication and career handoff](docs/release/PUBLICATION_HANDOFF.md)
-- [Experiment guide](docs/experiments/EXPERIMENT_GUIDE.md)
-- [Known limitations](docs/verification/KNOWN_LIMITATIONS.md)
+### Compute backends
 
-The project is distributed under the [MIT License](LICENSE). Third-party notices for GLFW, Dear ImGui, ImPlot, and `stb_image_write` are included in the license file.
+| Backend | Contact update strategy | Main purpose |
+| --- | --- | --- |
+| `sim_core/` | Sequential, in-place Gauss–Seidel-style | Reference implementation and analytical tests |
+| `sim_omp_v2/` | OpenMP, thread-local Jacobi-style accumulation | Multicore implementation and scaling studies |
+| `sim_cuda_v2/` | CUDA, double-buffered Jacobi-style updates | GPU implementation and numerical comparisons |
+
+Uniform spatial grids reduce collision *candidate discovery* in suitable particle distributions; they do not guarantee constant work for arbitrarily dense scenes. Reported performance data are hardware-, algorithm-, and workload-specific—not universal GPU speedup claims.
+
+## Verification evidence
+
+An engineering audit on **November 1, 2026** reported these results on the documented WSL2/RTX 4060 environment:
+
+| Build / test scope | Reported result |
+| --- | ---: |
+| CUDA-enabled build | **10/10** CTest suites passed |
+| CPU/OpenMP desktop build | **7/7** CTest suites passed |
+| CPU/OpenMP CLI-only build | **6/6** CTest suites passed |
+| Core physics checks | **14/14** passed |
+| Collision acceptance checks | **7/7** passed |
+| OpenMP checks across 1–16 threads | **46/46** passed |
+| CUDA correctness checks | **10/10** passed |
+| Cross-backend scenarios | **4/4** passed |
+
+Five non-empty CSV exports were also generated. These results describe **tested configurations and scenarios**, not universal physical accuracy. Reproduce locally with `ctest` and inspect the source in [`tests/`](tests/).
+
+Explore [sample CSV files](output/csv/), [plots](output/plots/), [release notes](RELEASE_NOTES.md), and the [engineering limitations](docs/verification/KNOWN_LIMITATIONS.md).
+
+## Repository guide
+
+| Folder | Contents |
+| --- | --- |
+| [`sim_core/`](sim_core/) | Shared physical types, integration, contact and boundary logic, diagnostics |
+| [`sim_omp_v2/`](sim_omp_v2/) | Multicore solver and spatial-grid broad phase |
+| [`sim_cuda_v2/`](sim_cuda_v2/) | CUDA solver and GPU spatial grid |
+| [`lab_gui/`](lab_gui/) | GLFW / Dear ImGui / ImPlot desktop interface |
+| [`experiments/`](experiments/) | Reproducible experiment runners and numerical audit |
+| [`tests/`](tests/) | Regression, analytical, and cross-backend checks |
+| [`docs/coursework/`](docs/coursework/) | Five guided educational laboratory modules |
+| [`output/`](output/) | Example screenshots, CSV data, and historical benchmark plots |
+| [`2D-particle-sim/`](2D-particle-sim/) | **Legacy v1** SFML-based CPU/GPU prototype and historical measurements; not the current v2 implementation |
+
+For guided studies, see the [experiment guide](docs/experiments/EXPERIMENT_GUIDE.md) and [educational labs](docs/coursework/). Some historical engineering reports retain milestone-specific terminology and benchmark results; the current README and release notes define the public v2 claims.
+
+## Scope and known limitations
+
+- **2D circular particles**, frictionless normal contacts, no spin or rotational dynamics.
+- **Discrete collision detection** can miss impacts at excessive travel per substep; the displayed displacement ratio is a heuristic, not a guarantee.
+- **Gauss–Seidel vs. Jacobi** update ordering can produce different dense-contact trajectories.
+- **CUDA tested on `sm_89`** only; portability to other GPU architectures is unverified.
+- **GUI tested primarily on Linux/WSLg**; native platform support is not guaranteed.
+- **Historical performance plots** are examples from specific hardware and benchmark configurations, not transferable acceleration guarantees.
+- Unattended WSLg screenshot mode produced blank captures during an audit; the checked-in application screenshots were visually inspected.
+
+This project demonstrates numerical simulation engineering and HPC concepts; it is **not** intended for safety-critical calculations or validation of real granular-material behavior.
+
+## License
+
+[MIT License](LICENSE), with third-party notices in the same file. Verify the redistribution rights of any **legacy** bundled assets separately before reuse.
