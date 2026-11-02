@@ -1,5 +1,6 @@
-# Build artifacts
+# Build and sanitizer artifacts
 build/
+build_*/
 **/build/
 *.o
 *.obj
@@ -10,6 +11,18 @@ build/
 *.exe
 *.out
 
+# Dear ImGui local state
+imgui.ini
+
+# Profiling and logs
+*.log
+*.qdstrm
+
+# Test scratch outputs
+output/test_tmp/
+output/csv/lab_export_*.csv
+2D-particle-sim/gpuSim/timings_cuda.csv
+
 # CMake
 CMakeFiles/
 CMakeCache.txt
@@ -17,15 +30,13 @@ cmake_install.cmake
 Makefile
 compile_commands.json
 
-# VS Code
+# IDE
 .vscode/
+.idea/
 
 # OS junk
 .DS_Store
 Thumbs.db
-
-# Data outputs
-*.csv
 
 # Python
 __pycache__/

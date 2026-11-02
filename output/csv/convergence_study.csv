@@ -1,0 +1,10 @@
+# Experiment: EXP_03_TIMESTEP_CONVERGENCE (Empirical Order of Convergence & Timestep Refinement)
+# Physical Objective: Determine whether the numerical integrator achieves theoretical first-order convergence in smooth ballistic motion, and analyze convergence behavior across discontinuous collision events.
+# Duration: 0.2 s
+# Columns: dt(s),total_steps,l2_error(m),linf_error(m),error_reduction_ratio,empirical_order,compute_time(ms)
+dt,total_steps,l2_error,linf_error,error_reduction_ratio,empirical_order,compute_time_ms
+0.040000,5,2.602003e-02,3.922665e-02,1.000000,0.000000,0.000181
+0.020000,10,1.216977e-02,1.961339e-02,1.999994,0.999996,0.000118
+0.010000,20,5.873694e-03,9.806514e-03,2.000036,1.000026,0.000207
+0.005000,40,2.883910e-03,4.903316e-03,1.999976,0.999982,0.000296
+0.002500,80,1.428680e-03,2.451539e-03,2.000097,1.000070,0.000556
