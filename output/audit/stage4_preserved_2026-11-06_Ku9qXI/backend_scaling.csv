@@ -1,0 +1,18 @@
+# kind,backend_scaling
+# scenario,particle_cloud
+# protocol,fresh deterministic golden-angle disk, N=128/256/512/1024; 3 repeated warm CPU/OMP/CUDA solver steps, median ms/step; N>256 uses 10 vs 25 steps
+# config_dt_s,0.008333333768
+# config_substeps,4
+# config_contact_iterations,2
+# config_restitution,0.8000000119
+# config_boundary_restitution,0.8999999762
+# config_gravity_x,0
+# config_gravity_y,0
+# config_boundary_radius_m,1.100000024
+# omp_threads,4
+# measured_repeats,3
+particles,requested_particles,generated_particles,physics_steps,benchmark_samples,substeps,contact_iterations,simulated_seconds,cpu_total_ms,cpu_ms_per_step,omp_ms_per_step,cuda_ms_per_step,omp_speedup,cuda_speedup,cuda_available,max_penetration_m,peak_penetration_m,kinetic_energy_j,active_contacts,omp_max_position_difference_m,cuda_max_position_difference_m,omp_max_velocity_difference_m_s,cuda_max_velocity_difference_m_s,finite
+128,128,128,25,3,4,2,0.2083333442,2.159356,0.08637424,0.06127012,0.56182784,1.409728592,0.1537379137,1,0,0,0,0,0,0,0,0,1
+256,256,256,25,3,4,2,0.2083333442,8.587506,0.34350024,0.0716312,0.48974388,4.79539977,0.7013875089,1,0,0,0,0,0,0,0,0,1
+512,512,512,10,3,4,2,0.08333333768,13.437331,1.3437331,0.122562,0.4949872,10.96370082,2.714682521,1,0,0,0,0,0,0,0,0,1
+1024,1024,1024,10,3,4,2,0.08333333768,54.321159,5.4321159,0.2308264,0.7821686,23.53333891,6.944942433,1,0,0,0,0,0,0,0,0,1

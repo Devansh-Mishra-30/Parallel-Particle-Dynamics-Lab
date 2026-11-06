@@ -1,5 +1,9 @@
 #pragma once
 
+#include "lab_gui/workbench_modes.h"
+#include "lab_gui/workbench_predictions.h"
+#include "lab_gui/workbench_evidence.h"
+
 #include "sim_core/boundary.h"
 #include "sim_core/cpu_reference_solver.h"
 #include "sim_core/diagnostics.h"
@@ -103,6 +107,7 @@ struct CsvExportRow {
     float max_penetration{0.0f};
     float pos_error{0.0f};
     float vel_error{0.0f};
+    bool ballistic_freeflight_valid{false};
 };
 
 /**
@@ -119,6 +124,9 @@ struct CrossBackendComparisonResult {
     float cuda_max_vel_diff{0.0f};
     size_t particle_count{0};
     int steps_simulated{0};
+    double snapshot_time_s{0.0};
+    float snapshot_dt_s{0.0f};
+    int snapshot_substeps{0};
     std::string summary;
 };
 
@@ -161,6 +169,135 @@ enum class SolverBackend {
  * \brief Central application state binding simulation, UI controls, and diagnostics.
  */
 struct AppState {
+    // Stage 2: independent investigation and physical scenario selections.
+    InvestigationMode investigation_mode{InvestigationMode::PhysicsVerification};
+    PhysicsScenario physics_scenario{PhysicsScenario::Collision};
+    bool custom_settings_enabled{false};
+    bool custom_configuration_dirty{false};
+
+    WorkbenchEvidence stage4_evidence;
+    std::vector<sim_core::Vec2> simulated_trajectory;
+    // Stage 3: scenario's recommended configuration and its initial particles.
+    // No raw pointers; snapshots are owned values, independent of live solver state.
+    WorkbenchParameters workbench_defaults{};
+    bool has_workbench_defaults{false};
+    std::vector<sim_core::Particle> workbench_initial_particles;
+
+    [[nodiscard]] WorkbenchParameters current_workbench_parameters() const {
+        WorkbenchParameters p;
+        p.restitution = config.restitution;
+        p.wall_restitution = config.boundary_restitution;
+        p.gravity_x = config.gravity.x;
+        p.gravity_y = config.gravity.y;
+        p.frame_dt = config.dt;
+        p.substeps = config.substeps;
+        p.contact_iterations = config.solver_iterations;
+        p.stabilization = config.stabilization_factor;
+        p.boundary_radius = boundary.radius;
+        p.particle_count = static_cast<int>(get_active_particle_count());
+        p.integrator = config.integrator == sim_core::IntegratorType::ExplicitEuler ? 1 : 0;
+        if (physics_scenario == PhysicsScenario::Collision) {
+            p.radius_1 = initial_collision.r1;
+            p.radius_2 = initial_collision.r2;
+            p.mass_1 = initial_collision.m1;
+            p.mass_2 = initial_collision.m2;
+            p.impact_offset = initial_collision.impact_parameter;
+            p.initial_v1_x = initial_collision.v1.x;
+            p.initial_v1_y = initial_collision.v1.y;
+            p.initial_v2_x = initial_collision.v2.x;
+            p.initial_v2_y = initial_collision.v2.y;
+        }
+        return p;
+    }
+
+    void capture_workbench_start_state() {
+        // Presets are authored on the CPU reference, before any dynamics steps.
+        workbench_initial_particles = solver.get_particles();
+    }
+
+    void capture_workbench_defaults() {
+        stage4_evidence = WorkbenchEvidence{};
+        workbench_defaults = current_workbench_parameters();
+        has_workbench_defaults = true;
+        custom_configuration_dirty = false;
+    }
+
+    void invalidate_parameter_results() {
+        // A previous backend comparison or convergence study belongs to a different
+        // configuration. Do not silently represent it as a new run's evidence.
+        backend_comparison.executed = false;
+        convergence_results.clear();
+        stage4_evidence = WorkbenchEvidence{};
+        last_export_success = false;
+    }
+
+    void note_workbench_parameter_edit() {
+        if (has_workbench_defaults) {
+            custom_configuration_dirty = parameters_differ(
+                workbench_defaults, current_workbench_parameters());
+        }
+        invalidate_parameter_results();
+        // Update all solver parameters WITHOUT replacing the live state on the
+        // active CUDA/OpenMP backend with potentially stale CPU particles.
+        solver.set_config(config);
+        solver.set_boundary(boundary);
+        omp_solver.set_config(config);
+        omp_solver.set_boundary(boundary);
+#if HAS_CUDA_BACKEND
+        if (cuda_initialized) {
+            cuda_solver.set_config(config);
+            cuda_solver.set_boundary(boundary);
+        }
+#endif
+        // One run must not mix observations from different configurations.
+        // If a physical/numerical edit happens mid-run, restart at t=0 with
+        // identical initial particles and the newly selected parameters.
+        if (current_time > 0.0 || frame_index > 0 || !recorded_rows.empty()) {
+            reset_run_preserving_parameters();
+            show_toast("Settings changed: run restarted, old traces cleared");
+        }
+    }
+
+    void reset_run_preserving_parameters() {
+        // Reset RUN restarts the scenario with current custom settings. In
+        // contrast, Restore Defaults reloads the recommended scenario preset.
+        if (workbench_initial_particles.empty()) {
+            show_toast("No initial scenario snapshot; load a scenario first");
+            return;
+        }
+        solver.set_config(config);
+        solver.set_boundary(boundary);
+        solver.set_particles(workbench_initial_particles);
+        current_time = 0.0;
+        frame_index = 0;
+        total_substeps = 0;
+        is_paused = true;
+        step_single_frame = false;
+        last_physics_step_ms = 0.0;
+        current_cfl = 0.0f;
+        current_pos_error = 0.0f;
+        current_vel_error = 0.0f;
+        reset_buffers();
+        invalidate_parameter_results();
+        current_diagnostics = solver.compute_diagnostics();
+        initial_momentum = current_diagnostics.total_momentum;
+        initial_energy = current_diagnostics.total_mechanical_energy;
+        measured_initial_ek = current_diagnostics.total_kinetic_energy;
+        if (!workbench_initial_particles.empty()) {
+            initial_pos1 = workbench_initial_particles.front().position;
+            initial_vel1 = workbench_initial_particles.front().velocity;
+        }
+        if (physics_scenario == PhysicsScenario::Collision) {
+            initial_collision.restitution = config.restitution;
+            recompute_collision_analytical_solution();
+        }
+        sync_solvers_from_cpu();
+        camera_auto_fit = true;
+        custom_configuration_dirty = has_workbench_defaults &&
+            parameters_differ(workbench_defaults, current_workbench_parameters());
+        show_toast("Run restarted with current parameter values");
+    }
+
     // Progressive Scientific UI Disclosure Mode (Learn, Analyze, Performance)
     LabUiMode ui_mode{LabUiMode::Learn};
 
@@ -179,6 +316,11 @@ struct AppState {
     int omp_threads{4};
     bool cuda_initialized{false};
     double last_physics_step_ms{0.0};
+    bool show_metrics_window{false};
+    int requested_particle_count{256};
+    bool scaling_workload_active{false};
+    std::vector<sim_core::Particle> scaling_initial_particles;
+    bool camera_auto_fit{true};
 
     void sync_solvers_from_cpu() {
         omp_solver.set_config(config);
@@ -344,6 +486,8 @@ struct AppState {
         buf_pos_error.clear();
         buf_vel_error.clear();
         recorded_rows.clear();
+        simulated_trajectory.clear();
+        backend_comparison.executed = false; // results refer to a previous snapshot
         collision_has_occurred = false;
         collision_time = 0.0;
         measured_post_v1 = {0.0f, 0.0f};
@@ -418,29 +562,22 @@ struct AppState {
     void run_cross_backend_comparison(int steps = 100) {
         backend_comparison.executed = true;
         backend_comparison.steps_simulated = steps;
+        backend_comparison.snapshot_time_s = current_time;
+        backend_comparison.snapshot_dt_s = config.dt;
+        backend_comparison.snapshot_substeps = config.substeps;
 
-        // Use current particles or generate a benchmark grid of 64 particles
-        std::vector<sim_core::Particle> benchmark_particles = solver.get_particles();
-        if (benchmark_particles.size() < 4) {
-            benchmark_particles.clear();
-            uint32_t pid = 1;
-            const int rows = 8;
-            const int cols = 8;
-            const float spacing = 0.08f;
-            const float start_x = -((cols - 1) * spacing) * 0.5f;
-            const float start_y = -((rows - 1) * spacing) * 0.5f;
-            for (int r = 0; r < rows; ++r) {
-                for (int c = 0; c < cols; ++c) {
-                    sim_core::Vec2 pos(start_x + c * spacing, start_y + r * spacing);
-                    sim_core::Vec2 vel((r % 2 == 0 ? 0.3f : -0.3f), (c % 2 == 0 ? 0.2f : -0.2f));
-                    benchmark_particles.emplace_back(pid++, pos, vel, 0.035f);
-                }
-            }
+        // Compare the SAME live scenario snapshot across all backends.
+        // Do not replace 1- or 2-particle experiments with a synthetic cloud.
+        std::vector<sim_core::Particle> benchmark_particles = get_active_particles();
+        if (benchmark_particles.empty()) {
+            backend_comparison.executed = false;
+            show_toast("No particles available for backend comparison");
+            return;
         }
         backend_comparison.particle_count = benchmark_particles.size();
 
         sim_core::SimConfig test_cfg = config;
-        test_cfg.substeps = 4;
+        // Retain the actual scenario timestep and substep count.
         sim_core::CircularBoundary test_bnd = boundary;
 
         // 1. CPU Reference Solver
@@ -456,6 +593,7 @@ struct AppState {
 
         // 2. OpenMP Multicore Solver
         sim_omp::OmpSolverV2 omp_test(test_cfg, test_bnd);
+        omp_test.set_broadphase_mode(omp_solver.get_broadphase_mode());
         omp_test.set_num_threads(omp_threads);
         omp_test.set_particles(benchmark_particles);
         const auto t_omp_0 = std::chrono::high_resolution_clock::now();
@@ -479,6 +617,7 @@ struct AppState {
 #if HAS_CUDA_BACKEND
         if (sim_cuda::CudaSolverV2::is_cuda_available()) {
             sim_cuda::CudaSolverV2 cuda_test(test_cfg, test_bnd);
+            cuda_test.set_broadphase_mode(cuda_solver.get_broadphase_mode());
             cuda_test.set_particles(benchmark_particles);
             const auto t_cuda_0 = std::chrono::high_resolution_clock::now();
             for (int i = 0; i < steps; ++i) {
@@ -504,7 +643,7 @@ struct AppState {
 #endif
 
         std::stringstream ss;
-        ss << "Cross-Backend verification passed: " << backend_comparison.particle_count
+        ss << "Cross-backend comparison completed: " << backend_comparison.particle_count
            << " particles, " << steps << " steps. CPU: " << std::fixed << std::setprecision(2)
            << backend_comparison.cpu_time_ms << "ms, OpenMP: " << backend_comparison.omp_time_ms << "ms";
         if (backend_comparison.cuda_time_ms > 0.0) {
@@ -559,12 +698,13 @@ struct AppState {
         file << "# Particle Count: " << solver.particle_count() << "\n";
         file << "# Coordinate Reference: SI Units (meters, seconds, kilograms, Joules)\n";
         file << "# Initial Particle Configuration [id, x_m, y_m, vx_m_s, vy_m_s, radius_m, mass_kg]:\n";
-        for (const auto& pt : get_active_particles()) {
+        for (const auto& pt : (workbench_initial_particles.empty() ?
+                                 get_active_particles() : workbench_initial_particles)) {
             file << "#   P" << pt.id << ": pos=(" << pt.position.x << ", " << pt.position.y
                  << "), vel=(" << pt.velocity.x << ", " << pt.velocity.y
                  << "), r=" << pt.radius << ", m=" << pt.mass << "\n";
         }
-        file << "time_s,kinetic_energy_J,potential_energy_J,total_energy_J,momentum_x_kg_m_s,momentum_y_kg_m_s,momentum_drift_kg_m_s,cfl_displacement_ratio,active_contacts,step_collision_impulses,max_penetration_m,pos_error_m,vel_error_m_s\n";
+        file << "time_s,kinetic_energy_J,potential_energy_J,total_energy_J,momentum_x_kg_m_s,momentum_y_kg_m_s,momentum_drift_kg_m_s,cfl_displacement_ratio,active_contacts,step_collision_impulses,max_penetration_m,pos_error_m,vel_error_m_s,ballistic_freeflight_valid\n";
 
         file << std::fixed << std::setprecision(6);
         for (const auto& row : recorded_rows) {
@@ -580,7 +720,8 @@ struct AppState {
                  << row.step_collision_impulses << ","
                  << row.max_penetration << ","
                  << row.pos_error << ","
-                 << row.vel_error << "\n";
+                 << row.vel_error << ","
+                 << (row.ballistic_freeflight_valid ? 1 : 0) << "\n";
         }
 
         last_export_path = filepath;

@@ -4,6 +4,7 @@
 #include "lab_gui/screenshot_util.h"
 
 #include <iostream>
+#include <fstream>
 #include <string>
 
 // Header-only GL definitions for OpenGL 3
@@ -27,6 +28,73 @@ static int run_headless_smoke_test(int frames_to_run) {
     std::cout << "Running " << frames_to_run << " headless frames across all experiment presets...\n";
 
     lab_gui::AppState state;
+
+    // Stage 2 integration smoke: all five selectors load the expected initial state.
+    struct SelectionSmokeCase {
+        lab_gui::PhysicsScenario scenario;
+        size_t expected_particles;
+    };
+    const SelectionSmokeCase selected_scenarios[] = {
+        {lab_gui::PhysicsScenario::Collision, 2},
+        {lab_gui::PhysicsScenario::Gravity, 1},
+        {lab_gui::PhysicsScenario::DenseContacts, 48},
+        {lab_gui::PhysicsScenario::ParticleCloud, 256},
+        {lab_gui::PhysicsScenario::CustomSandbox, 5}
+    };
+    for (const auto& entry : selected_scenarios) {
+        lab_gui::ExperimentPresets::load_workbench_scenario(state, entry.scenario);
+        if (state.get_active_particle_count() != entry.expected_particles ||
+            state.current_time != 0.0 || !state.is_paused ||
+            state.physics_scenario != entry.scenario ||
+            !state.current_diagnostics.is_finite) {
+            std::cerr << "Stage 2 smoke FAILED for "
+                      << lab_gui::scenario_name(entry.scenario) << "\n";
+            return 1;
+        }
+    }
+    std::cout << "Stage 2: 5 scenario presets initialized and verified.\n";
+
+    // Stage 3: Reset Run must preserve modified numerical/physical parameters,
+    // while Restore Defaults must recover the recommended baseline.
+    lab_gui::ExperimentPresets::load_workbench_scenario(
+        state, lab_gui::PhysicsScenario::Collision);
+    const auto original = state.workbench_initial_particles;
+    const float default_e = state.workbench_defaults.restitution;
+    state.config.restitution = 0.8f;
+    state.config.substeps = 16;
+    state.note_workbench_parameter_edit();
+    if (!state.custom_configuration_dirty ||
+        lab_gui::predict_changes(state.workbench_defaults,
+                                state.current_workbench_parameters(),
+                                state.physics_scenario,
+                                state.investigation_mode).size() != 2) {
+        std::cerr << "Stage 3 prediction baseline FAILED\n";
+        return 1;
+    }
+    state.step_active_solver();
+    state.current_time += state.config.dt;
+    state.reset_run_preserving_parameters();
+    if (state.config.restitution != 0.8f || state.config.substeps != 16 ||
+        state.current_time != 0.0 || !state.is_paused ||
+        !state.custom_configuration_dirty ||
+        state.get_active_particles().size() != original.size() ||
+        (state.get_active_particles()[0].position - original[0].position).length() > 1e-6f) {
+        std::cerr << "Stage 3 custom Reset Run FAILED\n";
+        return 1;
+    }
+    lab_gui::ExperimentPresets::load_workbench_scenario(
+        state, lab_gui::PhysicsScenario::Collision);
+    if (state.custom_configuration_dirty || state.config.restitution != default_e ||
+        !state.has_workbench_defaults ||
+        lab_gui::parameters_differ(state.workbench_defaults,
+                                   state.current_workbench_parameters())) {
+        std::cerr << "Stage 3 Restore Defaults FAILED\n";
+        return 1;
+    }
+    std::cout << "Stage 3: baseline, prediction, custom reset and restore OK.\n";
+
+
+
 
     // Test 1: Collision Experiment
     std::cout << "[1/4] Testing Collision scenario...\n";
@@ -108,6 +176,8 @@ int main(int argc, char* argv[]) {
     int target_frames = 0;
     std::string backend_name = "cpu";
     int omp_threads = 8;
+    int window_w = 1600;
+    int window_h = 920;
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
@@ -131,6 +201,10 @@ int main(int argc, char* argv[]) {
             backend_name = argv[++i];
         } else if (arg == "--threads" && i + 1 < argc) {
             omp_threads = std::max(1, std::min(16, std::atoi(argv[++i])));
+        } else if (arg == "--width" && i + 1 < argc) {
+            window_w = std::max(960, std::atoi(argv[++i]));
+        } else if (arg == "--height" && i + 1 < argc) {
+            window_h = std::max(640, std::atoi(argv[++i]));
         } else if (arg == "--help" || arg == "-h") {
             std::cout << "Parallel Particle Dynamics Lab (Phase 1C)\n";
             std::cout << "Usage:\n";
@@ -160,8 +234,6 @@ int main(int argc, char* argv[]) {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    const int window_w = 1600;
-    const int window_h = 920;
     GLFWwindow* window = glfwCreateWindow(window_w, window_h,
                                           "Parallel Particle Dynamics Lab - Mechanical Engineering Verification Workbench",
                                           nullptr, nullptr);
@@ -181,6 +253,22 @@ int main(int argc, char* argv[]) {
     ImPlot::CreateContext();
 
     ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr; // Start with default panel positions every launch.
+    // The default bitmap font looks blocky when upscaled. Use a real TTF when
+    // available; remain portable by falling back to the built-in ImGui font.
+    io.FontGlobalScale = 1.0f;
+    const char* font_candidates[] = {
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+    };
+    for (const char* font_path : font_candidates) {
+        std::ifstream font_file(font_path);
+        if (font_file.good()) {
+            io.Fonts->AddFontFromFileTTF(font_path, 17.0f);
+            break;
+        }
+    } // readable across high-resolution desktop windows
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
@@ -192,16 +280,26 @@ int main(int argc, char* argv[]) {
 
     // Configure initial scenario if requested via CLI
     if (target_scenario == "gravity") {
-        lab_gui::ExperimentPresets::load_gravity(state);
+        lab_gui::ExperimentPresets::load_workbench_scenario(
+            state, lab_gui::PhysicsScenario::Gravity);
     } else if (target_scenario == "convergence") {
+        state.investigation_mode = lab_gui::InvestigationMode::NumericalAccuracy;
+        state.physics_scenario = lab_gui::PhysicsScenario::Gravity;
         lab_gui::ExperimentPresets::load_convergence(state);
+        state.capture_workbench_defaults();
     } else if (target_scenario == "granular") {
-        lab_gui::ExperimentPresets::load_dense_packing(state, 48);
+        lab_gui::ExperimentPresets::load_workbench_scenario(
+            state, lab_gui::PhysicsScenario::DenseContacts);
     } else if (target_scenario == "custom") {
-        lab_gui::ExperimentPresets::load_custom(state);
+        lab_gui::ExperimentPresets::load_workbench_scenario(
+            state, lab_gui::PhysicsScenario::CustomSandbox);
     } else { // default collision
-        const float e = (custom_restitution >= 0.0f) ? custom_restitution : 0.528f;
-        lab_gui::ExperimentPresets::load_collision(state, e);
+        lab_gui::ExperimentPresets::load_workbench_scenario(
+            state, lab_gui::PhysicsScenario::Collision);
+        if (custom_restitution >= 0.0f) {
+            lab_gui::ExperimentPresets::load_collision(state, custom_restitution);
+            state.capture_workbench_defaults();
+        }
     }
 
     if (backend_name == "omp" || backend_name == "openmp") {
@@ -221,9 +319,11 @@ int main(int argc, char* argv[]) {
     if (!screenshot_path.empty()) {
         std::cout << "[Screenshot Mode] Simulating scenario '" << target_scenario
                   << "' for " << target_frames << " frames...\n";
+        state.is_paused = false;
         for (int f = 0; f < target_frames; ++f) {
             app.update(static_cast<float>(state.config.dt));
         }
+        state.is_paused = true;
 
         if (target_scenario == "convergence") {
             lab_gui::DiagnosticsPanel::execute_convergence_sweep(state);

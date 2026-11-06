@@ -26,17 +26,25 @@ sim_core::Vec2 ViewportPanel::screen_to_world(const ImVec2& screen_pos,
 
 void ViewportPanel::render(AppState& state) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin("2D Simulation Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::BeginChild("##ParticleSimulationCanvas", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     const ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
     const ImVec2 canvas_size = ImGui::GetContentRegionAvail();
 
     if (canvas_size.x < 50.0f || canvas_size.y < 50.0f) {
-        ImGui::End();
+        ImGui::EndChild();
         ImGui::PopStyleVar();
         return;
     }
 
+    // Auto-fit with generous breathing room around the complete circular boundary.
+    // Disable automatic fitting after a manual zoom/pan, re-enable via Fit Container.
+    if (state.camera_auto_fit) {
+        const float diameter = std::max(0.01f, 2.0f * state.boundary.radius);
+        state.camera_zoom = std::clamp(0.82f * std::min(canvas_size.x, canvas_size.y) / diameter,
+                                       1.0f, 2500.0f);
+        state.camera_offset = state.boundary.center;
+    }
     const ImVec2 canvas_center(canvas_pos.x + canvas_size.x * 0.5f,
                                canvas_pos.y + canvas_size.y * 0.5f);
     const ImVec2 canvas_min = canvas_pos;
@@ -55,6 +63,7 @@ void ViewportPanel::render(AppState& state) {
     if (is_hovered) {
         // Zoom via mouse wheel (zoom centered on cursor)
         if (io.MouseWheel != 0.0f) {
+            state.camera_auto_fit = false;
             const float zoom_factor = (io.MouseWheel > 0.0f) ? 1.15f : (1.0f / 1.15f);
             const sim_core::Vec2 mouse_world_before = screen_to_world(io.MousePos, canvas_center, state.camera_offset, state.camera_zoom);
             state.camera_zoom = std::clamp(state.camera_zoom * zoom_factor, 60.0f, 2500.0f);
@@ -65,6 +74,7 @@ void ViewportPanel::render(AppState& state) {
 
         // Pan via Right Mouse Button or Middle Mouse Button drag
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Right) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+            state.camera_auto_fit = false;
             const ImVec2 drag_delta = io.MouseDelta;
             state.camera_offset.x -= drag_delta.x / state.camera_zoom;
             state.camera_offset.y += drag_delta.y / state.camera_zoom; // y-up
@@ -86,6 +96,18 @@ void ViewportPanel::render(AppState& state) {
         draw_analytical_reference(draw_list, canvas_center, state.camera_offset, state.camera_zoom, state);
     }
 
+    // Stage 4: measured numerical path in amber, distinct from cyan free-flight ghost.
+    if (state.physics_scenario == PhysicsScenario::Gravity &&
+        state.simulated_trajectory.size() > 1) {
+        for (size_t i = 1; i < state.simulated_trajectory.size(); ++i) {
+            const ImVec2 a = world_to_screen(state.simulated_trajectory[i-1],
+                                             canvas_center, state.camera_offset, state.camera_zoom);
+            const ImVec2 b = world_to_screen(state.simulated_trajectory[i],
+                                             canvas_center, state.camera_offset, state.camera_zoom);
+            draw_list->AddLine(a, b, IM_COL32(255, 184, 70, 225), 2.0f);
+        }
+    }
+
     // 4. Contact Normal Vectors & Penetration Depths
     if (state.show_contact_normals) {
         draw_contact_normals(draw_list, canvas_center, state.camera_offset, state.camera_zoom, state);
@@ -105,7 +127,7 @@ void ViewportPanel::render(AppState& state) {
                       "Time: %.3f s | Substeps: %d | N: %zu | CFL: %.2f",
                       state.current_time,
                       state.config.substeps,
-                      state.solver.particle_count(),
+                      state.get_active_particle_count(),
                       state.current_cfl);
 
         // Semi-transparent background pill for HUD text
@@ -125,16 +147,17 @@ void ViewportPanel::render(AppState& state) {
 
         // Quick Navigation Buttons
         ImGui::SetCursorScreenPos(ImVec2(hud_pos.x, hud_pos.y + 26.0f));
-        if (ImGui::SmallButton("Reset View")) {
-            state.camera_offset = {0.0f, 0.0f};
-            state.camera_zoom = 360.0f;
+        if (ImGui::SmallButton("Fit Container")) {
+            state.camera_auto_fit = true;
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("+ Zoom")) {
+            state.camera_auto_fit = false;
             state.camera_zoom = std::min(state.camera_zoom * 1.25f, 2500.0f);
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("- Zoom")) {
+            state.camera_auto_fit = false;
             state.camera_zoom = std::max(state.camera_zoom / 1.25f, 60.0f);
         }
 
@@ -142,7 +165,7 @@ void ViewportPanel::render(AppState& state) {
     }
 
     draw_list->PopClipRect();
-    ImGui::End();
+    ImGui::EndChild();
     ImGui::PopStyleVar();
 }
 
@@ -286,9 +309,14 @@ void ViewportPanel::draw_contact_normals(ImDrawList* draw_list,
                 const ImVec2 mid((pi_screen.x + pj_screen.x) * 0.5f, (pi_screen.y + pj_screen.y) * 0.5f);
                 draw_list->AddCircleFilled(mid, 3.5f, IM_COL32(255, 230, 80, 255));
 
-                char pen_buf[32];
-                std::snprintf(pen_buf, sizeof(pen_buf), "d=%.2fmm", penetration * 1000.0f);
-                draw_list->AddText(ImVec2(mid.x + 6.0f, mid.y - 6.0f), IM_COL32(255, 100, 100, 240), pen_buf);
+                // Per-contact labels overwhelm dense scenes. Retain contact lines
+                // and dots for all N; show precise depth labels only for small labs.
+                if (n <= 24) {
+                    char pen_buf[32];
+                    std::snprintf(pen_buf, sizeof(pen_buf), "d=%.2fmm", penetration * 1000.0f);
+                    draw_list->AddText(ImVec2(mid.x + 6.0f, mid.y - 6.0f),
+                                       IM_COL32(255, 100, 100, 240), pen_buf);
+                }
             }
         }
     }
