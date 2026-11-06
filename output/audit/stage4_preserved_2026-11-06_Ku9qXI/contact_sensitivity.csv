@@ -1,0 +1,18 @@
+# kind,contact_sensitivity
+# scenario,dense_contacts
+# protocol,4 configs from same initial snapshot, fixed T=3 s; CPU GS; per-frame peak and endpoint overlap; timing includes diagnostics sampling
+# config_dt_s,0.01666666754
+# config_substeps,12
+# config_contact_iterations,8
+# config_restitution,0.200000003
+# config_boundary_restitution,0.3000000119
+# config_gravity_x,0
+# config_gravity_y,-9.806650162
+# config_boundary_radius_m,0.8999999762
+# omp_threads,4
+# measured_repeats,1
+particles,requested_particles,generated_particles,physics_steps,benchmark_samples,substeps,contact_iterations,simulated_seconds,cpu_total_ms,cpu_ms_per_step,omp_ms_per_step,cuda_ms_per_step,omp_speedup,cuda_speedup,cuda_available,max_penetration_m,peak_penetration_m,kinetic_energy_j,active_contacts,omp_max_position_difference_m,cuda_max_position_difference_m,omp_max_velocity_difference_m_s,cuda_max_velocity_difference_m_s,finite
+48,48,48,180,1,4,2,3.000000156,3.712608,0.0206256,nan,nan,0,0,0,0.01826158538,0.01826585457,4.360576153,72,0,0,0,0,1
+48,48,48,180,1,4,8,3.000000156,13.652736,0.07584853333,nan,nan,0,0,0,0.002754330635,0.01063540578,1.24469316,69,0,0,0,0,1
+48,48,48,180,1,12,2,3.000000156,11.020232,0.06122351111,nan,nan,0,0,0,0.002771452069,0.004779651761,0.7194448113,72,0,0,0,0,1
+48,48,48,180,1,12,8,3.000000156,41.355613,0.2297534056,nan,nan,0,0,0,0.0002586767077,0.002823591232,0.1902855933,68,0,0,0,0,1

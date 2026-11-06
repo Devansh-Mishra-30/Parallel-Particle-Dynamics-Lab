@@ -1,0 +1,21 @@
+# Parallel Particle Dynamics Lab: Scientific Experiment Export
+# Experiment: EXP_01_TWO_PARTICLE_COLLISION
+# UI Mode: LEARN
+# Active Backend: CPU Reference
+# Integrator: Semi-implicit Symplectic Euler
+# Total Physical Duration: 0.1 s
+# Frame Timestep dt: 0.00833333 s
+# Integration Substeps: 8
+# Effective dt_sub: 0.00104167 s
+# Gauss-Seidel Solver Iterations K: 2
+# Penetration Stabilization Factor alpha: 0.5
+# Coefficient of Restitution e: 0.528
+# Boundary Restitution e_b: 1
+# Gravitational Field g: (0, 0) m/s^2
+# Particle Count: 2
+# Coordinate Reference: SI Units (meters, seconds, kilograms, Joules)
+# Initial Particle Configuration [id, x_m, y_m, vx_m_s, vy_m_s, radius_m, mass_kg]:
+#   P1: pos=(-0.3, 0), vel=(1, 0), r=0.06, m=11.3097
+#   P2: pos=(0.3, -0), vel=(-1, 0), r=0.06, m=11.3097
+time_s,kinetic_energy_J,potential_energy_J,total_energy_J,momentum_x_kg_m_s,momentum_y_kg_m_s,momentum_drift_kg_m_s,cfl_displacement_ratio,active_contacts,step_collision_impulses,max_penetration_m,pos_error_m,vel_error_m_s,ballistic_freeflight_valid
+0.100000,11.309733,0.000000,11.309733,0.000000,0.000000,0.000000,0.000000,0,0,0.000000,0.000000,0.000000,0
