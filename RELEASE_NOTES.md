@@ -1,43 +1,43 @@
-# Parallel Particle Dynamics Lab v2.0-rc1
+# Parallel Particle Dynamics Lab — consolidated v2 scientific workbench
 
-`v2.0-rc1` is a release-candidate snapshot of an educational and portfolio-oriented 2D particle simulation workbench. It is suitable for publishing as a clearly labeled engineering prototype after owner review; it is not represented as a research-validated physics package.
+**Publication state (November 6, 2026):** source and scientific evidence merged into `main` by [PR #3](https://github.com/Devansh-Mishra-30/cuda-particle-simulation/pull/3). This is an educational / portfolio engineering prototype, **not** a physically validated granular solver or a research-grade library. No formal GitHub Release/tag has been created.
 
-## Included
+## Delivered
 
-- C++17 sequential CPU reference solver.
-- OpenMP multicore solver with thread-local Jacobi contact accumulation.
-- Optional CUDA solver and GPU spatial grid for the verified `sm_89` environment.
-- Semi-implicit and explicit Euler integration experiments.
-- Frictionless elastic and inelastic particle collisions.
-- Circular boundary response and discrete penetration correction.
-- Interactive GLFW, Dear ImGui, ImPlot, and OpenGL workbench.
-- CSV export, plotting scripts, benchmark artifacts, coursework, and automated tests.
+- C++17 frictionless 2D discs, uniform gravity, circular boundaries, explicit and semi-implicit Euler integration, impulse contacts, and discrete penetration correction.
+- Sequential CPU Gauss–Seidel-style reference, OpenMP uniform-grid Jacobi implementation, and optional NVIDIA CUDA grid/Jacobi backend.
+- Native GLFW/ImGui/ImPlot interface with three investigation modes, five scenarios, parameter predictions, diagnostics, trajectory overlays, and experiment-specific validity flags.
+- Automated collision and ballistic verification; timestep convergence; controlled 48-particle dense-contact sensitivity; 128–1024-particle CPU/OpenMP/CUDA scaling; CSV exports with methodological metadata.
+- CI builds CPU/OpenMP headless and GUI-enabled configurations on Ubuntu 24.04. CUDA runtime verification is performed separately on NVIDIA hardware.
 
-## Verification performed November 1, 2026
+## Verified evidence (November 6, 2026)
 
-Environment: Ubuntu 24.04 under WSL2/WSLg; GCC 13.3.0; CMake 3.28.3; OpenMP 4.5; CUDA Toolkit 12.0; NVIDIA GeForce RTX 4060 Laptop GPU (compute capability 8.9).
+| Evidence | Result and scope |
+| --- | --- |
+| Local CUDA-enabled CMake/CTest | **14/14** CTest suites passed on WSL2/RTX 4060 (compute architecture 89) |
+| GitHub Actions headless CPU/OpenMP | **10/10** tests passed on `main` |
+| GitHub Actions GUI-enabled CPU/OpenMP | **11/11** tests passed using Xvfb on `main` |
+| Collision energy | Maximum analytical energy-change error approximately `1.43e-6 J` in the tested cases |
+| Ballistic trajectory | Errors consistent with the first-order semi-implicit Euler error model for two accelerations before wall impact |
+| Timestep sweep | Empirical convergence order approximately `1.00` at each refinement |
+| Dense contacts | Four controlled finite-state configurations; decreasing observed penetration with increased resolution in the tested scene |
+| CPU/OpenMP/CUDA study | Four deterministic collision-free workloads; exploratory 3-sample median times with differences in algorithms acknowledged |
 
-| Configuration | Result |
-|---|---:|
-| Existing CUDA-enabled release build | 10/10 CTest suites passed |
-| Clean CPU/OpenMP desktop build | 7/7 CTest suites passed |
-| Clean CPU/OpenMP CLI-only build | 6/6 CTest suites passed |
+See [Stage 4 verification](docs/audit/STAGE_4_VERIFICATION_REPORT.md), [immutable evidence snapshot](output/audit/stage4_preserved_2026-11-06_Ku9qXI/), and [successful main-branch CI run](https://github.com/Devansh-Mishra-30/cuda-particle-simulation/actions/runs/42302040951).
 
-Representative checks: core physics 14/14; collision acceptance 7/7; OpenMP correctness 46/46 across 1-16 threads; CUDA correctness 10/10; cross-backend verification 4/4; five non-empty experiment CSV outputs.
+## Interpretation boundaries
 
-These checks verify the tested cases and configurations. They do not establish universal numerical accuracy, physical validation for real materials, or transferable performance results.
+- CPU reference uses all-pairs candidate search and in-place Gauss–Seidel updates; OpenMP and CUDA select spatial-grid Jacobi strategies. **Implementation speedups are not pure hardware speedups.**
+- Identical results for a collision-free cloud do not establish contact-active many-body backend equivalence.
+- Finite states and small per-step displacement do not guarantee accurate contact resolution, material validation, or continuous collision detection.
+- The GPU result is hardware/toolchain-specific. `CMAKE_CUDA_ARCHITECTURES` is configurable; architecture `89` is the locally tested default, not a universal requirement.
+- Desktop framebuffer rendering was reviewed at three resolutions. Mouse-driven experiment controls still require a short manual acceptance check; automated UI clicking was unavailable in the audit environment.
+- Old SFML source and historical performance artifacts are retained as prior development. The current C++17 v2 pipeline does **not** use the historical SFML gitlinks.
+- Historical fonts, binary artifacts, and profiling captures are not part of the v2 build, and their redistribution/provenance must be reviewed before creating a redistributed binary package.
 
-## Publication notes
+## Remaining work outside the v2 software scope
 
-- Existing benchmark data and plots are retained as machine-specific artifacts. Re-run them before quoting a speedup.
-- CPU/OpenMP builds are supported with `-DENABLE_CUDA=OFF`.
-- The current CUDA CMake path forces architecture 89; other GPU targets are not release-verified.
-- The tracked GUI screenshots are genuine 1600x920 application captures.
-- During the final WSLg audit, automated screenshot mode produced blank images; those audit-generated blank files were removed.
-- Dense simultaneous contacts are expected to differ microscopically between sequential Gauss-Seidel and parallel Jacobi update ordering.
+- Optional media pass: improve screenshots, add GIF/video demo, and polish the visual README presentation.
+- Optional formal version tag or packaged binary release after license/provenance review.
 
-## Release boundary
-
-No source-code defect was found that blocks publication as a prototype. Before publishing, the owner should review the complete diff, decide which internal audit drafts belong in the public repository, and explicitly authorize commit/push/tag actions. No commit, push, merge, tag, or GitHub release was performed during this audit.
-
-See [README.md](README.md) for build and demonstration instructions and [docs/release/PUBLICATION_HANDOFF.md](docs/release/PUBLICATION_HANDOFF.md) for the checklist and career copy.
+**Previous checkpoint:** The November 1 `v2.0-rc1` audit reported 10 CUDA, 7 desktop, and 6 CLI test suites and a fixed `sm_89` architecture. Those counts and configuration were superseded by the November 6 Stage 4/5 workbench verification and configurable CMake CUDA architecture.

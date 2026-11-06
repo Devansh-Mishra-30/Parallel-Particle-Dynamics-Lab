@@ -143,7 +143,7 @@ Stage 5 moved the end-to-end, numerical-audit, and GUI-smoke test outputs into *
 
 The GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) defines two Ubuntu 24.04 jobs: a **CPU/OpenMP headless** build and a **CPU/OpenMP GUI-enabled** build with a virtual X display. Both configure a fresh build, run the applicable CTest suites, verify that testing did not modify the checkout, and upload test logs as workflow artifacts.
 
-**CI status:** The workflow has been prepared locally; GitHub-hosted execution must be confirmed after the complete source, tests, and workflow are committed and pushed. CUDA tests are **not** part of this hosted workflow and must be run separately on NVIDIA hardware. Do not interpret a passing CPU CI run as CUDA validation.
+**CI status (November 6, 2026): Verified on `main`.** The [successful GitHub Actions run](https://github.com/Devansh-Mishra-30/cuda-particle-simulation/actions/runs/42302040951) passed **10/10 headless** and **11/11 GUI-enabled CPU/OpenMP** tests. The separate CUDA-enabled local WSL2/RTX 4060 configuration passed **14/14** CTest suites. Hosted CI does **not** exercise CUDA; CPU CI success is not GPU validation.
 
 ## Reproduce the experiments
 
