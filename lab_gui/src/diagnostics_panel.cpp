@@ -1,4 +1,5 @@
 #include "lab_gui/diagnostics_panel.h"
+#include "lab_gui/workbench_study_runner.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -8,66 +9,15 @@
 namespace lab_gui {
 
 void DiagnosticsPanel::execute_convergence_sweep(AppState& state) {
-    state.convergence_results.clear();
     state.convergence_study_running = true;
-
-    const std::vector<float> dts = {0.04f, 0.02f, 0.01f, 0.005f};
-    constexpr float T_END = 0.40f; // Exact integer step divisor (10, 20, 40, 80 steps)
-    const sim_core::Vec2 x0(-0.6f, -0.4f);
-    const sim_core::Vec2 v0(1.5f, 2.5f);
-    const sim_core::Vec2 g(0.0f, -9.80665f);
-
-    float prev_err = 0.0f;
-    float prev_dt = 0.0f;
-
-    for (size_t i = 0; i < dts.size(); ++i) {
-        const float dt = dts[i];
-        sim_core::SimConfig cfg;
-        cfg.integrator = state.config.integrator; // Respect selected integrator!
-        cfg.dt = dt;
-        cfg.substeps = 1; // single step to observe pure dt scaling
-        cfg.gravity = g;
-        sim_core::CircularBoundary bnd({0.0f, 0.0f}, 100.0f); // unconstrained
-        sim_core::CpuReferenceSolver s(cfg, bnd);
-        s.add_particle(sim_core::Particle(1, x0, v0, 0.04f));
-
-        const auto t_start = std::chrono::high_resolution_clock::now();
-        const int steps = static_cast<int>(std::round(T_END / dt));
-        for (int step = 0; step < steps; ++step) {
-            s.step();
-        }
-        const auto t_end = std::chrono::high_resolution_clock::now();
-        const double runtime_us = std::chrono::duration<double, std::micro>(t_end - t_start).count();
-
-        const sim_core::Vec2 x_sim = s.get_particles()[0].position;
-        const sim_core::Vec2 x_exact = x0 + v0 * T_END + 0.5f * g * (T_END * T_END);
-        const float err = (x_sim - x_exact).length();
-
-        ConvergenceDataPoint pt;
-        pt.dt = dt;
-        pt.substeps = 1;
-        pt.error_l2 = err;
-        pt.runtime_us = runtime_us;
-
-        if (i > 0 && prev_err > 0.0f) {
-            pt.reduction_ratio = prev_err / err;
-            pt.empirical_order = std::log(pt.reduction_ratio) / std::log(prev_dt / dt);
-        } else {
-            pt.reduction_ratio = 0.0f;
-            pt.empirical_order = 0.0f;
-        }
-
-        prev_err = err;
-        prev_dt = dt;
-        state.convergence_results.push_back(pt);
-    }
-
+    state.convergence_results =
+        run_ballistic_convergence_study(state.config.integrator);
     state.convergence_study_running = false;
     state.show_toast("Convergence study complete (4 refinement levels)");
 }
 
 void DiagnosticsPanel::render(AppState& state) {
-    ImGui::Begin("Live Diagnostics & Scientific Verification", nullptr);
+    ImGui::BeginChild("##ScientificDiagnosticsChild", ImVec2(0.0f, 0.0f), true);
 
     ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "QUANTITATIVE VERIFICATION DASHBOARD");
     ImGui::TextDisabled("Real-Time Invariants, Conservation Laws & Numerical Health");
@@ -92,7 +42,7 @@ void DiagnosticsPanel::render(AppState& state) {
     // 5. Educational Lab Exercises & Guidance
     render_educational_modules(state);
 
-    ImGui::End();
+    ImGui::EndChild();
 }
 
 void DiagnosticsPanel::render_energy_plot(AppState& state) {
@@ -194,7 +144,7 @@ void DiagnosticsPanel::render_analytical_verification(AppState& state) {
             ImGui::TextDisabled("Assumptions: Isolated 2-body system, frictionless contact, 1D line-of-centers impulse.");
         }
         else if (state.active_experiment == ExperimentType::GravityBallistic) {
-            const auto& particles = state.solver.get_particles();
+            const auto& particles = state.get_active_particles();
             if (!particles.empty()) {
                 const float t = static_cast<float>(state.current_time);
                 const sim_core::Vec2 x_exact = state.initial_pos1 + state.initial_vel1 * t + 0.5f * state.config.gravity * (t * t);
@@ -203,14 +153,23 @@ void DiagnosticsPanel::render_analytical_verification(AppState& state) {
                 const float pos_err_m = (particles[0].position - x_exact).length();
                 const float vel_err_ms = (particles[0].velocity - v_exact).length();
 
-                state.current_pos_error = pos_err_m;
-                state.current_vel_error = vel_err_ms;
+                // Error values are updated by the physics update loop, not by UI rendering.
+                // After first boundary impact the free-flight reference is no longer valid.
 
                 ImGui::Text("Ballistic Analytical Comparison (x_exact = x0 + v0*t + 0.5*g*t^2):");
                 ImGui::BulletText("Simulated pos: (%.4f, %.4f) m", particles[0].position.x, particles[0].position.y);
                 ImGui::BulletText("Exact pos:     (%.4f, %.4f) m", x_exact.x, x_exact.y);
-                ImGui::BulletText("Position Error: %.3f mm (%.2e m)", pos_err_m * 1000.0f, pos_err_m);
-                ImGui::BulletText("Velocity Error: %.3f mm/s (%.2e m/s)", vel_err_ms * 1000.0f, vel_err_ms);
+                if (state.wall_contact_occurred) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.28f, 1.0f),
+                                       "N/A: free-flight analytical error after wall contact (t >= %.3f s)",
+                                       state.wall_contact_time);
+                    ImGui::TextWrapped("The cyan ballistic curve describes motion WITHOUT a wall;"
+                                      " the amber path is the simulated trajectory WITH the wall.");
+                } else {
+                    ImGui::BulletText("Position Error: %.3f mm (%.2e m)", pos_err_m * 1000.0f, pos_err_m);
+                    ImGui::BulletText("Velocity Error: %.3f mm/s (%.2e m/s)", vel_err_ms * 1000.0f, vel_err_ms);
+                    ImGui::TextDisabled("Pre-contact ballistic reference VALID");
+                }
             }
         }
         else if (state.active_experiment == ExperimentType::ConvergenceStudy) {
@@ -244,6 +203,20 @@ void DiagnosticsPanel::render_analytical_verification(AppState& state) {
                     ImGui::Text("%.1f", pt.runtime_us); ImGui::NextColumn();
                 }
                 ImGui::Columns(1);
+                if (state.convergence_results.size() >= 2) {
+                    std::vector<double> ln_h, ln_err;
+                    for (const auto& pt : state.convergence_results) {
+                        if (pt.dt > 0.0f && pt.error_l2 > 0.0f) {
+                            ln_h.push_back(std::log(static_cast<double>(pt.dt)));
+                            ln_err.push_back(std::log(static_cast<double>(pt.error_l2)));
+                        }
+                    }
+                    if (ln_h.size() >= 2 && ImPlot::BeginPlot("##ConvergenceLogLog", ImVec2(-1.0f, 185.0f))) {
+                        ImPlot::SetupAxes("ln(dt)", "ln(position error)", ImPlotAxisFlags_AutoFit, ImPlotAxisFlags_AutoFit);
+                        ImPlot::PlotLine("Measured error", ln_h.data(), ln_err.data(), static_cast<int>(ln_h.size()));
+                        ImPlot::EndPlot();
+                    }
+                }
                 ImGui::Separator();
                 const char* integ_name = (state.config.integrator == sim_core::IntegratorType::ExplicitEuler) ?
                     "Explicit Forward Euler" : "Semi-implicit Symplectic Euler";
@@ -253,7 +226,7 @@ void DiagnosticsPanel::render_analytical_verification(AppState& state) {
         else if (state.active_experiment == ExperimentType::DensePacking) {
             const auto& diag = state.current_diagnostics;
             ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "Dense Granular Column Settling (EXP_04):");
-            ImGui::BulletText("Particles in Domain: %zu", state.solver.particle_count());
+            ImGui::BulletText("Particles in Domain: %zu", state.get_active_particle_count());
             ImGui::BulletText("Active Pairwise Contacts: %d", diag.active_contacts);
             ImGui::BulletText("Maximum Penetration: %.3f mm", diag.max_penetration * 1000.0f);
 
@@ -269,7 +242,7 @@ void DiagnosticsPanel::render_analytical_verification(AppState& state) {
 void DiagnosticsPanel::render_stability_sentinel(AppState& state) {
     if (ImGui::CollapsingHeader("Numerical Health & Stability Sentinel", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Displacement ratio: v_max * dt_sub / r_min
-        const auto& particles = state.solver.get_particles();
+        const auto& particles = state.get_active_particles();
         float max_v = 0.0f;
         float min_r = 1.0f;
         for (const auto& p : particles) {

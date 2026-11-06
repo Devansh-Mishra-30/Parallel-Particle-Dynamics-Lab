@@ -13,6 +13,7 @@ public:
      * \brief Render the Controls Panel (Left Panel) in the current ImGui window.
      */
     void render(AppState& state);
+    void render_performance(AppState& state);
 
 private:
     void render_mode_tabs(AppState& state);
@@ -22,6 +23,7 @@ private:
     void render_performance_workbench(AppState& state);
     void render_playback_controls(AppState& state);
     void render_visualization_options(AppState& state);
+    void render_experiment_coach(AppState& state);
 };
 
 } // namespace lab_gui

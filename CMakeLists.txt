@@ -80,7 +80,7 @@ if(ENABLE_CUDA)
     enable_language(CUDA)
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-    set(CMAKE_CUDA_ARCHITECTURES 89 CACHE STRING "CUDA compute architecture" FORCE)
+    set(CMAKE_CUDA_ARCHITECTURES 89 CACHE STRING "CUDA compute architecture")
     set(CUDA_BACKEND_AVAILABLE ON)
 
     set(SIM_CUDA_SOURCES
@@ -96,7 +96,7 @@ if(ENABLE_CUDA)
     target_link_libraries(sim_cuda_v2 PUBLIC sim_core)
     target_compile_definitions(sim_cuda_v2 PUBLIC HAS_CUDA_BACKEND=1)
     add_compile_definitions(HAS_CUDA_BACKEND=1)
-    message(STATUS "NVIDIA CUDA backend enabled (Compute Architecture: sm_89).")
+    message(STATUS "NVIDIA CUDA backend enabled (compute architectures: ${CMAKE_CUDA_ARCHITECTURES}).")
   else()
     message(STATUS "CUDA compiler not found. Building without CUDA GPU backend.")
     set(CUDA_BACKEND_AVAILABLE OFF)
@@ -221,6 +221,43 @@ endif()
 # -----------------------------------------------------------------------------
 enable_testing()
 
+# Stage 2: pure UI-selection metadata checks (no GLFW/display needed).
+# Stage 3 prediction rules: independent of GUI/graphics.
+# Stage 4 evidence/CSV helpers (headless C++17 unit verification).
+add_executable(test_workbench_evidence tests/test_workbench_evidence.cpp)
+target_include_directories(test_workbench_evidence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lab_gui/include)
+target_link_libraries(test_workbench_evidence PRIVATE sim_v2_compile_flags)
+add_test(NAME WorkbenchEvidenceVerification COMMAND test_workbench_evidence)
+
+add_executable(test_workbench_predictions tests/test_workbench_predictions.cpp)
+target_include_directories(test_workbench_predictions PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lab_gui/include)
+target_link_libraries(test_workbench_predictions PRIVATE sim_v2_compile_flags)
+add_test(NAME WorkbenchPredictionVerification COMMAND test_workbench_predictions)
+
+add_executable(test_workbench_modes tests/test_workbench_modes.cpp)
+target_include_directories(test_workbench_modes PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lab_gui/include)
+target_link_libraries(test_workbench_modes PRIVATE sim_v2_compile_flags)
+add_test(NAME WorkbenchSelectionVerification COMMAND test_workbench_modes)
+
+add_executable(test_stage4_verification tests/test_stage4_verification.cpp)
+target_include_directories(test_stage4_verification PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/lab_gui/include
+)
+set(STAGE4_VERIFICATION_LIBS
+  sim_omp_v2
+  sim_core
+  OpenMP::OpenMP_CXX
+  sim_v2_compile_flags
+)
+if(CUDA_BACKEND_AVAILABLE)
+  list(APPEND STAGE4_VERIFICATION_LIBS sim_cuda_v2)
+endif()
+target_link_libraries(test_stage4_verification PRIVATE ${STAGE4_VERIFICATION_LIBS})
+add_test(NAME Stage4EndToEndVerification
+  COMMAND test_stage4_verification --out
+          ${CMAKE_CURRENT_BINARY_DIR}/test_output/stage4_e2e)
+set_tests_properties(Stage4EndToEndVerification PROPERTIES TIMEOUT 180)
+
 add_executable(test_physics tests/test_physics.cpp)
 target_link_libraries(test_physics PRIVATE sim_core sim_v2_compile_flags)
 add_test(NAME PhysicsVerification COMMAND test_physics)
@@ -256,7 +293,10 @@ if(CUDA_BACKEND_AVAILABLE)
 endif()
 
 if(BUILD_LAB_GUI)
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test_output/gui_smoke")
   add_test(NAME LabGuiSmokeTest COMMAND sim_lab --test-headless 60)
+  set_tests_properties(LabGuiSmokeTest PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test_output/gui_smoke")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -285,4 +325,5 @@ if(CUDA_BACKEND_AVAILABLE)
   list(APPEND AUDIT_LIBS sim_cuda_v2)
 endif()
 target_link_libraries(audit_numerical_solvers PRIVATE ${AUDIT_LIBS})
-add_test(NAME NumericalAuditVerification COMMAND audit_numerical_solvers --out ${CMAKE_SOURCE_DIR}/output/audit)
+add_test(NAME NumericalAuditVerification COMMAND audit_numerical_solvers --out
+  ${CMAKE_CURRENT_BINARY_DIR}/test_output/numerical_audit)

@@ -1,4 +1,6 @@
+#include <limits>
 #include "lab_gui/app.h"
+#include "lab_gui/ballistic_reference.h"
 #include "lab_gui/experiment_presets.h"
 #include "lab_gui/screenshot_util.h"
 
@@ -13,8 +15,17 @@ LabApp::LabApp() {
 
 void LabApp::initialize() {
     setup_scientific_theme();
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FramePadding = ImVec2(10.0f, 6.0f);
+    style.ItemSpacing = ImVec2(8.0f, 9.0f);
+    style.WindowPadding = ImVec2(12.0f, 12.0f);
+    style.WindowRounding = 7.0f;
+    style.FrameRounding = 5.0f;
+    style.GrabRounding = 5.0f;
+    style.ScrollbarRounding = 5.0f;
     // Default starting scenario: Two-Particle Impact
-    ExperimentPresets::load_collision(state_);
+    ExperimentPresets::load_workbench_scenario(state_, state_.physics_scenario);
+    state_.show_metrics_window = true; // Physics mode opens scientific diagnostics.
 }
 
 void LabApp::setup_scientific_theme() {
@@ -100,10 +111,31 @@ void LabApp::update(float delta_wall_seconds) {
         }
 
         for (int s = 0; s < steps_to_run; ++s) {
+            sim_core::Particle ballistic_before;
+            bool have_ballistic_before = false;
+            if (state_.active_experiment == ExperimentType::GravityBallistic) {
+                const auto& before = state_.get_active_particles();
+                if (before.size() == 1) {
+                    ballistic_before = before.front();
+                    have_ballistic_before = true;
+                }
+            }
             state_.step_active_solver();
             state_.current_time += state_.config.dt;
             state_.total_substeps += state_.config.substeps;
             state_.frame_index++;
+            // Stage 4: keep a sampled numerical path separately from the dashed
+            // free-flight reference. It is bounded to avoid unbounded memory growth.
+            if (state_.physics_scenario == PhysicsScenario::Gravity) {
+                const auto& pts = state_.get_active_particles();
+                if (!pts.empty()) {
+                    if (state_.simulated_trajectory.empty())
+                        state_.simulated_trajectory.push_back(state_.initial_pos1);
+                    state_.simulated_trajectory.push_back(pts.front().position);
+                    if (state_.simulated_trajectory.size() > 1200)
+                        state_.simulated_trajectory.erase(state_.simulated_trajectory.begin());
+                }
+            }
 
             // Analytical ballistic error tracking & boundary collision sentinel
             if (state_.active_experiment == ExperimentType::GravityBallistic) {
@@ -113,13 +145,20 @@ void LabApp::update(float delta_wall_seconds) {
                     const sim_core::Vec2 x_exact = state_.initial_pos1 + state_.initial_vel1 * t + 0.5f * state_.config.gravity * (t * t);
                     const sim_core::Vec2 v_exact = state_.initial_vel1 + state_.config.gravity * t;
 
-                    state_.current_pos_error = (particles[0].position - x_exact).length();
-                    state_.current_vel_error = (particles[0].velocity - v_exact).length();
-
-                    const float dist_from_center = (particles[0].position - state_.boundary.center).length();
-                    if (!state_.wall_contact_occurred && (dist_from_center + particles[0].radius >= state_.boundary.radius - 1e-3f)) {
+                    if (!state_.wall_contact_occurred &&
+                        have_ballistic_before &&
+                        boundary_impulse_occurred(ballistic_before, particles[0], state_.config)) {
                         state_.wall_contact_occurred = true;
                         state_.wall_contact_time = state_.current_time;
+                    }
+                    // DO NOT interpret post-wall deviation from free flight as
+                    // numerical integration error. The reference model has changed.
+                    if (!state_.wall_contact_occurred) {
+                        state_.current_pos_error = (particles[0].position - x_exact).length();
+                        state_.current_vel_error = (particles[0].velocity - v_exact).length();
+                    } else {
+                        state_.current_pos_error = std::numeric_limits<float>::quiet_NaN();
+                        state_.current_vel_error = std::numeric_limits<float>::quiet_NaN();
                     }
                 }
             } else {
@@ -175,10 +214,17 @@ void LabApp::update(float delta_wall_seconds) {
             row.max_penetration = state_.current_diagnostics.max_penetration;
             row.pos_error = state_.current_pos_error;
             row.vel_error = state_.current_vel_error;
+            row.ballistic_freeflight_valid =
+                (state_.physics_scenario == PhysicsScenario::Gravity && !state_.wall_contact_occurred);
             state_.recorded_rows.push_back(row);
         }
     } else {
         // Paused: compute diagnostics on static snapshot
+#if HAS_CUDA_BACKEND
+        if (state_.active_backend == SolverBackend::CudaGpu && state_.cuda_initialized) {
+            state_.current_diagnostics = state_.cuda_solver.compute_diagnostics();
+        } else
+#endif
         if (state_.active_backend == SolverBackend::OpenMpParallel) {
             state_.current_diagnostics = state_.omp_solver.compute_diagnostics();
         } else {
@@ -188,28 +234,126 @@ void LabApp::update(float delta_wall_seconds) {
 }
 
 void LabApp::render(int window_width, int window_height) {
-    const float w = static_cast<float>(window_width);
-    const float h = static_cast<float>(window_height);
+    // Stage 1: one root window occupying the actual ImGui main viewport.
+    // Use WorkPos/WorkSize, NOT cached window dimensions or FirstUseEver sizes.
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
 
-    // Responsive 3-Panel Split
-    const float left_w = std::clamp(w * 0.26f, 320.0f, 420.0f);
-    const float right_w = std::clamp(w * 0.32f, 380.0f, 500.0f);
-    const float center_w = std::max(200.0f, w - left_w - right_w);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f, 9.0f));
+    const ImGuiWindowFlags root_flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+    ImGui::Begin("##ParticleDynamicsWorkspace", nullptr, root_flags);
+    ImGui::PopStyleVar(3);
 
-    // Left Panel: Controls
-    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(left_w, h), ImGuiCond_FirstUseEver);
-    controls_panel_.render(state_);
+    // Stage 2: independent investigation and physical-scenario selectors.
+    ImGui::TextColored(ImVec4(0.38f, 0.80f, 1.00f, 1.0f),
+                       "PARALLEL PARTICLE DYNAMICS LAB");
+    ImGui::SameLine();
+    ImGui::TextDisabled("/  Numerical Verification & Performance Workbench");
 
-    // Center Panel: Viewport
-    ImGui::SetNextWindowPos(ImVec2(left_w, 0.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(center_w, h), ImGuiCond_FirstUseEver);
-    viewport_panel_.render(state_);
+    const char* investigation_items[] = {
+        "01  Physics verification", "02  Numerical accuracy", "03  HPC performance"
+    };
+    const char* scenario_items[] = {
+        "01  Two-particle collision", "02  Gravity and ballistics",
+        "03  Dense contacts", "04  Particle cloud", "05  Custom sandbox"
+    };
+    int mode_index = static_cast<int>(state_.investigation_mode);
+    int scenario_index = static_cast<int>(state_.physics_scenario);
+    const bool narrow_header = ImGui::GetContentRegionAvail().x < 870.0f;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Investigation");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(narrow_header ? 230.0f : 250.0f);
+    if (ImGui::Combo("##InvestigationMode", &mode_index,
+                     investigation_items, IM_ARRAYSIZE(investigation_items))) {
+        state_.investigation_mode = static_cast<InvestigationMode>(mode_index);
+        state_.show_metrics_window =
+            (state_.investigation_mode != InvestigationMode::HpcPerformance);
+        state_.backend_comparison.executed = false;
+    }
+    if (!narrow_header) ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Scenario");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(narrow_header ? 230.0f : 240.0f);
+    if (ImGui::Combo("##PhysicsScenario", &scenario_index,
+                     scenario_items, IM_ARRAYSIZE(scenario_items))) {
+        const auto chosen = static_cast<PhysicsScenario>(scenario_index);
+        ExperimentPresets::load_workbench_scenario(state_, chosen);
+        // New scenario means new defaults; opt-in editing starts disabled.
+        state_.custom_settings_enabled = false;
+        state_.show_toast("Loaded default setup for selected physics scenario");
+    }
+    if (!narrow_header) ImGui::SameLine();
+    ImGui::Checkbox("Custom Settings", &state_.custom_settings_enabled);
 
-    // Right Panel: Diagnostics
-    ImGui::SetNextWindowPos(ImVec2(left_w + center_w, 0.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(right_w, h), ImGuiCond_FirstUseEver);
-    diagnostics_panel_.render(state_);
+    const auto description = describe_investigation(state_.investigation_mode,
+                                                     state_.physics_scenario);
+    ImGui::TextColored(ImVec4(0.91f, 0.94f, 0.99f, 1.0f), "%s", description.title);
+    ImGui::TextWrapped("Question: %s", description.question);
+    ImGui::Separator();
+
+    // Reserve one line for a low-noise status footer. The table fills all other space.
+    const float footer_height = ImGui::GetFrameHeightWithSpacing() + 7.0f;
+    const ImGuiTableFlags table_flags =
+        ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV |
+        ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings;
+    if (ImGui::BeginTable("##MainWorkspaceColumns", 3, table_flags,
+                          ImVec2(0.0f, -footer_height))) {
+        // Compact windows need enough side-panel width for scientific labels.
+        // The user can drag the column borders. Widths stretch with the OS window.
+        const bool compact_workspace = ImGui::GetContentRegionAvail().x < 1400.0f;
+        const float side_weight = compact_workspace ? 0.30f : 0.25f;
+        const float simulation_weight = compact_workspace ? 0.40f : 0.50f;
+        ImGui::TableSetupColumn("Setup", ImGuiTableColumnFlags_WidthStretch, side_weight);
+        ImGui::TableSetupColumn("Simulation", ImGuiTableColumnFlags_WidthStretch, simulation_weight);
+        ImGui::TableSetupColumn("Evidence", ImGuiTableColumnFlags_WidthStretch, side_weight);
+        ImGui::TableNextRow();
+
+        ImGui::TableSetColumnIndex(0);
+        controls_panel_.render(state_); // Scrollable child window, not a floating window.
+
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextColored(ImVec4(0.38f, 0.80f, 1.00f, 1.0f), "SIMULATION");
+        ImGui::SameLine();
+        ImGui::TextDisabled("Mouse wheel: zoom   |   Right-drag: pan");
+        viewport_panel_.render(state_); // Child fills the remaining central table cell.
+
+        ImGui::TableSetColumnIndex(2);
+        // The old fourth metrics window is now an integrated right-hand view.
+        // The existing left-side 'Open detailed diagnostics' switch selects it too.
+        const float right_width = ImGui::GetContentRegionAvail().x;
+        const float half_width = (right_width > 16.0f)
+            ? (right_width - ImGui::GetStyle().ItemSpacing.x) * 0.5f : 90.0f;
+        if (ImGui::Button("PERFORMANCE", ImVec2(half_width, 0.0f))) {
+            state_.show_metrics_window = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("DIAGNOSTICS", ImVec2(half_width, 0.0f))) {
+            state_.show_metrics_window = true;
+        }
+        if (state_.show_metrics_window) {
+            diagnostics_panel_.render(state_);
+        } else {
+            controls_panel_.render_performance(state_);
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::Separator();
+    ImGui::TextDisabled("%s  |  N = %zu  |  Simulation time %.3f s  |  Substeps %d",
+                        state_.is_paused ? "PAUSED" : "RUNNING",
+                        state_.get_active_particle_count(), state_.current_time,
+                        state_.config.substeps);
+    ImGui::End();
 
     // Handle Pending Screenshot Request
     if (!state_.pending_screenshot_path.empty()) {

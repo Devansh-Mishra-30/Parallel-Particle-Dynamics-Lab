@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lab_gui/app_state.h"
+#include <algorithm>
 #include <cmath>
 #include <random>
 
@@ -78,6 +79,7 @@ public:
         state.camera_offset = {0.0f, 0.0f};
         state.camera_zoom = 380.0f;
         state.sync_solvers_from_cpu();
+        state.capture_workbench_start_state();
     }
 
     /**
@@ -118,6 +120,7 @@ public:
         state.camera_offset = {0.0f, 0.0f};
         state.camera_zoom = 320.0f;
         state.sync_solvers_from_cpu();
+        state.capture_workbench_start_state();
     }
 
     /**
@@ -130,6 +133,7 @@ public:
         state.convergence_results.clear();
         state.convergence_study_running = false;
         state.sync_solvers_from_cpu();
+        state.capture_workbench_start_state();
     }
 
     /**
@@ -179,12 +183,14 @@ public:
         state.camera_offset = {0.0f, -0.3f};
         state.camera_zoom = 360.0f;
         state.sync_solvers_from_cpu();
+        state.capture_workbench_start_state();
     }
 
     /**
      * \brief EXP_CUSTOM: User-Configurable Particle Setup
      */
     static void load_custom(AppState& state) {
+        state.scaling_workload_active = false;
         state.active_experiment = ExperimentType::Custom;
         state.config.dt = 1.0f / 60.0f;
         state.config.substeps = 8;
@@ -217,7 +223,97 @@ public:
         state.camera_offset = {0.0f, 0.0f};
         state.camera_zoom = 340.0f;
         state.sync_solvers_from_cpu();
+        state.capture_workbench_start_state();
     }
+    /**
+     * Deterministic, controllable N-particle workload for backend exploration.
+     * Not an analytical contact-verification case.
+     */
+    static void load_scaling_workload(AppState& state, int count) {
+        count = std::max(16, std::min(count, 1024));
+        state.requested_particle_count = count;
+        state.scaling_workload_active = true;
+        state.active_experiment = ExperimentType::Custom;
+        state.config.dt = 1.0f / 120.0f;
+        state.config.substeps = 4;
+        state.config.gravity = {0.0f, 0.0f};
+        state.config.restitution = 0.8f;
+        state.config.boundary_restitution = 0.9f;
+        state.config.solver_iterations = 2;
+        state.config.stabilization_factor = 0.5f;
+
+        state.boundary = sim_core::CircularBoundary({0.0f, 0.0f}, 1.1f);
+        state.solver.set_config(state.config);
+        state.solver.set_boundary(state.boundary);
+        state.solver.clear_particles();
+
+        // Golden-angle disk distribution: exactly N particles, stable ordering, no row bias.
+        // This is a synthetic scaling workload, not a validated granular packing.
+        constexpr float kPi = 3.14159265358979323846f;
+        constexpr float kGoldenAngle = 2.39996322972865332f;
+        const float spawn_radius = state.boundary.radius - 0.10f;
+        const float particle_radius = std::min(
+            0.035f, 0.35f * std::sqrt(kPi * spawn_radius * spawn_radius / static_cast<float>(count)));
+        for (int idx = 0; idx < count; ++idx) {
+            const float theta = static_cast<float>(idx) * kGoldenAngle;
+            const float distance = spawn_radius * std::sqrt(
+                (static_cast<float>(idx) + 0.5f) / static_cast<float>(count));
+            const sim_core::Vec2 position(distance * std::cos(theta), distance * std::sin(theta));
+            const sim_core::Vec2 velocity(0.45f * std::cos(theta + 1.0f),
+                                          0.45f * std::sin(theta + 1.0f));
+            state.solver.add_particle(sim_core::Particle(
+                static_cast<uint32_t>(idx + 1), position, velocity, particle_radius));
+        }
+        // Capture original particle positions and velocities for exact Reset behavior.
+        state.scaling_initial_particles = state.solver.get_particles();
+
+        state.current_time = 0.0;
+        state.total_substeps = 0;
+        state.frame_index = 0;
+        state.reset_buffers();
+        state.current_diagnostics = state.solver.compute_diagnostics();
+        state.initial_momentum = state.current_diagnostics.total_momentum;
+        state.initial_energy = state.current_diagnostics.total_mechanical_energy;
+        state.camera_offset = {0.0f, 0.0f};
+        state.camera_zoom = 360.0f;
+        state.sync_solvers_from_cpu();
+        state.capture_workbench_start_state();
+        state.is_paused = true;
+    }
+    /** Stage 2: select one of the five existing physical scenarios.
+     * Changing scenario restores its documented default setup, pauses at t=0,
+     * invalidates any previous comparison and synchronizes all available solvers.
+     */
+    static void load_workbench_scenario(AppState& state, PhysicsScenario scenario) {
+        state.scaling_workload_active = false;
+        switch (scenario) {
+            case PhysicsScenario::Collision:
+                load_collision(state, 0.528f);
+                break;
+            case PhysicsScenario::Gravity:
+                load_gravity(state);
+                break;
+            case PhysicsScenario::DenseContacts:
+                load_dense_packing(state, 48);
+                break;
+            case PhysicsScenario::ParticleCloud:
+                load_scaling_workload(state, 256);
+                break;
+            case PhysicsScenario::CustomSandbox:
+                load_custom(state);
+                break;
+        }
+        state.physics_scenario = scenario;
+        state.is_paused = true;
+        state.step_single_frame = false;
+        state.sim_accumulator = 0.0f;
+        state.camera_auto_fit = true;
+        state.last_physics_step_ms = 0.0;
+        state.backend_comparison.executed = false;
+        state.convergence_results.clear();
+        state.capture_workbench_defaults();
+    }
+
 };
 
 } // namespace lab_gui
