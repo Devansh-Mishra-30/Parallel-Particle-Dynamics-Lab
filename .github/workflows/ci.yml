@@ -1,0 +1,160 @@
+name: C++ verification (CPU/OpenMP)
+
+# CUDA runtime tests are performed separately on NVIDIA hardware.
+# This workflow deliberately validates portable non-CUDA configurations.
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpp-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  headless:
+    name: CPU/OpenMP - headless
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out sources (no legacy submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++
+
+      - name: Configure (CUDA off; GUI off)
+        run: |
+          cmake -S . -B "$RUNNER_TEMP/particle-build-headless" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_CUDA=OFF \
+            -DBUILD_LAB_GUI=OFF
+
+      - name: Build
+        run: cmake --build "$RUNNER_TEMP/particle-build-headless" --parallel 3
+
+      - name: Verify registered tests
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          build = os.path.join(os.environ['RUNNER_TEMP'], 'particle-build-headless')
+          raw = subprocess.check_output(['ctest', '--test-dir', build, '--show-only=json-v1'], text=True)
+          names = {test['name'] for test in json.loads(raw)['tests']}
+          required = {'Stage4EndToEndVerification', 'NumericalAuditVerification',
+                      'PhysicsVerification', 'WorkbenchEvidenceVerification',
+                      'WorkbenchPredictionVerification', 'WorkbenchSelectionVerification'}
+          missing = required - names
+          print(f'Registered headless tests: {len(names)}; missing required: {sorted(missing)}')
+          if missing or len(names) < 10:
+              raise SystemExit('Expected headless regression coverage is missing')
+          PY
+
+      - name: Run headless CTest
+        run: |
+          ctest --test-dir "$RUNNER_TEMP/particle-build-headless" \
+            --output-on-failure \
+            --output-junit "$RUNNER_TEMP/particle-build-headless/ctest-results.xml"
+
+      - name: Ensure tests left checkout clean
+        if: always()
+        run: |
+          git status --short --untracked-files=all
+          test -z "$(git status --porcelain=v1 --untracked-files=all)" || {
+            echo 'ERROR: build or tests modified files in the checkout'
+            exit 1
+          }
+
+      - name: Preserve test logs and scratch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-ctest-evidence
+          path: |
+            ${{ runner.temp }}/particle-build-headless/ctest-results.xml
+            ${{ runner.temp }}/particle-build-headless/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/particle-build-headless/test_outputs/
+          if-no-files-found: warn
+          retention-days: 14
+
+  gui:
+    name: CPU/OpenMP - GUI build and smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out sources (no legacy submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install desktop and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ xvfb xauth \
+            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxkbcommon-dev
+
+      - name: Configure (CUDA off; GUI on)
+        run: |
+          cmake -S . -B "$RUNNER_TEMP/particle-build-gui" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_CUDA=OFF \
+            -DBUILD_LAB_GUI=ON
+
+      - name: Build GUI and regression tests
+        run: cmake --build "$RUNNER_TEMP/particle-build-gui" --parallel 3
+
+      - name: Verify registered GUI test
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          build = os.path.join(os.environ['RUNNER_TEMP'], 'particle-build-gui')
+          raw = subprocess.check_output(['ctest', '--test-dir', build, '--show-only=json-v1'], text=True)
+          names = {test['name'] for test in json.loads(raw)['tests']}
+          print(f'Registered GUI-build tests: {len(names)}')
+          if 'LabGuiSmokeTest' not in names or len(names) < 11:
+              raise SystemExit('GUI smoke test or expected regression coverage is missing')
+          PY
+
+      - name: Run all GUI-build CTest suites under Xvfb
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          xvfb-run -a -s '-screen 0 1600x900x24' \
+            ctest --test-dir "$RUNNER_TEMP/particle-build-gui" \
+              --output-on-failure \
+              --output-junit "$RUNNER_TEMP/particle-build-gui/ctest-results.xml"
+
+      - name: Ensure tests left checkout clean
+        if: always()
+        run: |
+          git status --short --untracked-files=all
+          test -z "$(git status --porcelain=v1 --untracked-files=all)" || {
+            echo 'ERROR: build or tests modified files in the checkout'
+            exit 1
+          }
+
+      - name: Preserve GUI test logs and scratch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-ctest-evidence
+          path: |
+            ${{ runner.temp }}/particle-build-gui/ctest-results.xml
+            ${{ runner.temp }}/particle-build-gui/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/particle-build-gui/test_outputs/
+          if-no-files-found: warn
+          retention-days: 14
