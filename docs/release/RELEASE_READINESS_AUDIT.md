@@ -1,3 +1,5 @@
+> **Historical reference (2026-10/early 2026-11).** This document records an earlier engineering checkpoint and may contain workload-specific or superseded metrics. For the verified November 6 workbench and current release position, use the [Stage 4 verification report](../audit/STAGE_4_VERIFICATION_REPORT.md) and the [main README](../../README.md). Do not compare historical speedups directly with the Stage 4 scaling study.
+
 # Parallel Particle Dynamics Lab: Release Readiness Engineering Audit
 ## Formal Evaluation Report for Release Candidate v2.0-rc1
 
