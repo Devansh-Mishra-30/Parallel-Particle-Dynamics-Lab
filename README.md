@@ -1,10 +1,110 @@
 # Parallel Particle Dynamics Lab
 
+[![C++ Verification](https://github.com/Devansh-Mishra-30/Parallel-Particle-Dynamics-Lab/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Devansh-Mishra-30/Parallel-Particle-Dynamics-Lab/actions/workflows/ci.yml)
+
+
 A C++17 numerical simulation and HPC workbench for studying 2D particle dynamics with sequential CPU, OpenMP, and NVIDIA CUDA implementations. Its native ImGui/ImPlot interface connects physical predictions, numerical errors, contact resolution, and computational cost.
 
 **Engineering question:** How do physical assumptions, timestep size, contact resolution, and backend design trade accuracy, stability, and compute cost? The lab starts with analytical cases where error is measurable, then moves to dense contacts and scaling workloads where results depend on both the numerical method and its implementation.
 
 **Verified highlights (November 2026):** first-order convergence (observed order ≈ 1.00); controlled 48-particle contact-resolution study; four-size CPU/OpenMP/CUDA scaling study; 14/14 local CUDA-enabled CTest suites passed. See the [scientific audit](docs/audit/STAGE_4_VERIFICATION_REPORT.md) and [preserved results](output/audit/stage4_preserved_2026-11-06_Ku9qXI/). These are results for the documented configurations, not general guarantees of accuracy or speedup.
+
+## Visual Showcase
+
+<p align="center">
+  <strong>Computational Physics · Numerical Methods · High-Performance Computing</strong>
+  <br>
+  <sub>CPU · OpenMP · NVIDIA CUDA · C++17 · Dear ImGui / ImPlot</sub>
+</p>
+
+<p align="center">
+  <a href="output/audit/stage4_preserved_2026-11-06_Ku9qXI/gui/gravity_1280x720.png">
+    <img
+      src="output/audit/stage4_preserved_2026-11-06_Ku9qXI/gui/gravity_1280x720.png"
+      alt="Parallel Particle Dynamics Lab showing gravity and ballistic trajectory verification"
+      width="900">
+  </a>
+</p>
+
+<p align="center">
+  <sub>
+    Native scientific workbench: simulated particle trajectories
+    compared against analytical physics references.
+  </sub>
+</p>
+
+### Physics, Accuracy, and Contact Dynamics
+
+<table>
+<tr>
+<td width="33%" align="center">
+  <a href="output/audit/stage4_preserved_2026-11-06_Ku9qXI/gui/collision.png">
+    <img
+      src="output/audit/stage4_preserved_2026-11-06_Ku9qXI/gui/collision.png"
+      alt="Particle collision investigation"
+      width="100%">
+  </a>
+  <br>
+  <strong>Collision Physics</strong>
+</td>
+
+<td width="33%" align="center">
+  <a href="output/audit/stage4_preserved_2026-11-06_Ku9qXI/gui/convergence.png">
+    <img
+      src="output/audit/stage4_preserved_2026-11-06_Ku9qXI/gui/convergence.png"
+      alt="Numerical timestep convergence investigation"
+      width="100%">
+  </a>
+  <br>
+  <strong>Numerical Convergence</strong>
+</td>
+
+<td width="33%" align="center">
+  <a href="output/audit/stage4_preserved_2026-11-06_Ku9qXI/gui/granular.png">
+    <img
+      src="output/audit/stage4_preserved_2026-11-06_Ku9qXI/gui/granular.png"
+      alt="Dense granular particle simulation"
+      width="100%">
+  </a>
+  <br>
+  <strong>Dense Contact Dynamics</strong>
+</td>
+</tr>
+</table>
+
+> **Figure provenance:** These screenshots are from the preserved
+> November 2026 Stage 4 scientific workbench verification.
+> They represent the documented simulation configurations,
+> not an assertion of identical trajectories across different solvers.
+
+### Explore the Project
+
+**[Portfolio Case Study](https://devanshportfolio.bubbleapps.io/version-test/project-10)**
+&nbsp; | &nbsp;
+**[Scientific Verification Report](docs/audit/STAGE_4_VERIFICATION_REPORT.md)**
+&nbsp; | &nbsp;
+**[Reproducible Evidence](output/audit/stage4_preserved_2026-11-06_Ku9qXI/)**
+&nbsp; | &nbsp;
+**[GitHub Actions](https://github.com/Devansh-Mishra-30/Parallel-Particle-Dynamics-Lab/actions)**
+
+### Engineering Highlights
+
+| Area | Verified implementation or result |
+| --- | --- |
+| **Physics** | 2D frictionless particle dynamics with gravity and restitution |
+| **Numerical integration** | Semi-implicit Euler with timestep refinement studies |
+| **Parallel computing** | Sequential CPU, OpenMP, and NVIDIA CUDA |
+| **Numerical convergence** | Approximately first-order in the documented ballistic study |
+| **Performance study** | Four particle-count workloads with CPU/OpenMP/CUDA comparisons |
+| **Local CUDA verification** | 14/14 CTest suites passed |
+| **Hosted CPU/OpenMP verification** | 10/10 headless and 11/11 GUI-enabled tests passed |
+| **Scientific workbench** | Dear ImGui and ImPlot interface |
+
+Performance measurements are specific to the documented hardware,
+solver configuration, and workload. They should not be interpreted
+as general speedup guarantees.
+
+---
 
 ## Physics and numerical methods
 
@@ -143,7 +243,7 @@ Stage 5 moved the end-to-end, numerical-audit, and GUI-smoke test outputs into *
 
 The GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) defines two Ubuntu 24.04 jobs: a **CPU/OpenMP headless** build and a **CPU/OpenMP GUI-enabled** build with a virtual X display. Both configure a fresh build, run the applicable CTest suites, verify that testing did not modify the checkout, and upload test logs as workflow artifacts.
 
-**CI status (November 6, 2026): Verified on `main`.** The [successful GitHub Actions run](https://github.com/Devansh-Mishra-30/cuda-particle-simulation/actions/runs/42302040951) passed **10/10 headless** and **11/11 GUI-enabled CPU/OpenMP** tests. The separate CUDA-enabled local WSL2/RTX 4060 configuration passed **14/14** CTest suites. Hosted CI does **not** exercise CUDA; CPU CI success is not GPU validation.
+**CI status (November 6, 2026): Verified on `main`.** The [successful GitHub Actions run](https://github.com/Devansh-Mishra-30/Parallel-Particle-Dynamics-Lab/actions/runs/42302040951) passed **10/10 headless** and **11/11 GUI-enabled CPU/OpenMP** tests. The separate CUDA-enabled local WSL2/RTX 4060 configuration passed **14/14** CTest suites. Hosted CI does **not** exercise CUDA; CPU CI success is not GPU validation.
 
 ## Reproduce the experiments
 
