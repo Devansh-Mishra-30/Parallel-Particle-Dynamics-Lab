@@ -411,7 +411,7 @@ int main(int argc, char* argv[]) {
         sf::Clock update_clock;
         sf::Clock wall_clock;
 
-        sf::Font font("assets/Arial.ttf");
+        sf::Font font("assets/ABeeZee-Regular.ttf");
         sf::Text fpsText(font);
         fpsText.setCharacterSize(20);
         fpsText.setFillColor(sf::Color::Black);

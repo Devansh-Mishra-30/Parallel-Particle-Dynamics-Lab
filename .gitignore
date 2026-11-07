@@ -49,3 +49,9 @@ __pycache__/
 # Windows attachment/download metadata accidentally copied through WSL.
 *:Zone.Identifier
 *：Zone.Identifier
+
+# Retired historical assets retained locally
+2D-particle-sim/cpuSim/assets/Arial.ttf
+2D-particle-sim/gpuSim/assets/Arial.ttf
+2D-particle-sim/gpuSim/assets/font.ttf
+2D-particle-sim/gpuSim/particle_sim

@@ -49,3 +49,9 @@ This project incorporates or links against the following open-source software:
 4. stb_image_write (Public Domain / MIT License)
    Website: https://github.com/nothings/stb
    Copyright (c) 2017 Sean Barrett
+
+5. ABeeZee Regular (SIL Open Font License 1.1)
+   Source: https://github.com/google/fonts/tree/main/ofl/abeezee
+   Used by the historical CPU and GPU SFML applications.
+   The complete font license and copyright notice are preserved in:
+   2D-particle-sim/ABeeZee-OFL.txt
