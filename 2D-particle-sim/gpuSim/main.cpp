@@ -229,13 +229,13 @@ int main(int argc, char** argv) {
     window.setFramerateLimit(60);
 
     sf::Font font;
-    bool fontOk = font.openFromFile("assets/font.ttf");
+    bool fontOk = font.openFromFile("assets/ABeeZee-Regular.ttf");
 
     sf::Text hud(font, "", 18);
     hud.setFillColor(sf::Color::White);
     hud.setPosition({-390.f, -390.f}); // top-left in centered view
     hud.setCharacterSize(18);
-    if (!font.openFromFile("assets/font.ttf")) {
+    if (!font.openFromFile("assets/ABeeZee-Regular.ttf")) {
         // If font fails, you can still run without overlay
     }
 
